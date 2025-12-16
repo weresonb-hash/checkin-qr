@@ -1,0 +1,2300 @@
+<!DOCTYPE html>
+<html lang="pt-BR" xmlns="http://www.w3.org/1999/html">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gym Check-in System PRO - ADMIN</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/html5-qrcode.min.js"></script>
+    <script src="js/qrcode.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <style>
+        /* Estilos personalizados */
+        .view {
+            transition: opacity 0.3s ease-in-out;
+        }
+        .hidden {
+            display: none !important;
+        }
+        /* Estilo para múltiplos selects */
+        .select-multiple-height {
+            height: 150px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+    <div id="messageOverlay" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
+        <div id="messageBox" class="p-6 rounded-lg shadow-xl w-full max-w-sm transition duration-300 ease-in-out transform scale-100">
+            <h3 id="messageTitle" class="text-xl font-bold mb-3 text-center"></h3>
+            <p id="messageDetail" class="text-md mb-4 text-center"></p>
+            <button onclick="closeMessageBox()" class="w-full p-2 rounded font-semibold transition duration-150 ease-in-out">Fechar</button>
+        </div>
+    </div>
+
+
+    <div class="container mx-auto p-4">
+
+        <div class="view hidden p-4 max-w-lg mx-auto bg-white shadow-lg rounded-xl mt-10" id="login-view">
+            <h2 class="text-3xl font-bold text-center text-indigo-700 mb-6">Sistema de Check-in Gym</h2>
+            <div id="login-form-container" class="mt-4 p-6 border rounded-lg bg-gray-50">
+                <h3 class="text-xl font-bold mb-3 text-gray-800">Acesso Administrativo</h3>
+                <input type="password" id="adminPassword" placeholder="Senha do Administrador" class="w-full p-2 border rounded mb-4" onkeypress="if(event.keyCode == 13) handleAdminLogin()">
+                <button id="adminLoginBtn" class="bg-indigo-600 text-white p-3 rounded w-full hover:bg-indigo-700 font-semibold">Entrar</button>
+            </div>
+        </div>
+
+        <div class="view hidden" id="admin-view">
+            <h1 class="text-4xl font-extrabold text-indigo-800 mb-6">Painel Administrativo</h1>
+            
+            <div class="flex flex-wrap gap-2 mb-6 p-4 bg-white rounded-lg shadow">
+                <button id="btn-admin-quick-checkin" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Check-in Rápido</button>
+                <button id="btn-admin-manage" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Gerenciar Alunos</button>
+                <button id="btn-admin-manage-schedule" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Gerenciar Grade</button>
+                <button id="btn-admin-checkin-history" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Histórico de Check-in</button>
+                <button id="btn-admin-logout" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 ml-auto">Sair (Logout)</button>
+            </div>
+
+            <div id="admin-sub-views">
+                
+                <div class="sub-view hidden p-6 bg-white rounded-lg shadow" id="admin-quick-checkin-view">
+                    <h2 class="text-2xl font-bold mb-4 text-indigo-700">Check-in Rápido Admin (Automático)</h2>
+                    
+                    <div class="p-4 border border-blue-300 rounded-lg bg-blue-50 mb-4" id="available-classes-container">
+                        <h4 class="font-semibold mb-3 text-blue-800">Aulas Abertas Agora (Janela de Check-in)</h4>
+                        <div id="available-classes-list" class="divide-y divide-blue-200">
+                            <p class="text-gray-500 italic">Carregando aulas...</p>
+                        </div>
+                    </div>
+                    <div class="p-4 border rounded-lg bg-gray-50 mb-4">
+                        <h4 class="font-semibold mb-3">1. Identificar Aluno e Fazer Check-in Automático</h4>
+                        <input type="text" id="quickCheckinStudentId" placeholder="ID do Aluno (Manual)" class="w-full p-2 border rounded mb-3" onkeypress="if(event.keyCode == 13) document.getElementById('btn-process-checkin').click()">
+                        <div class="flex gap-2">
+                             <button id="btn-open-admin-scanner" class="bg-blue-600 text-white p-3 rounded w-1/2 hover:bg-blue-700 font-semibold">Escanear QR do Aluno</button>
+                             <button id="btn-process-checkin" class="bg-indigo-600 text-white p-3 rounded w-1/2 hover:bg-indigo-700 font-semibold">Check-in Automático</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sub-view hidden p-6 bg-white rounded-lg shadow" id="admin-manage-students-view">
+                    <h2 class="text-2xl font-bold mb-4 text-indigo-700">Gerenciar Alunos</h2>
+                    <button id="btn-add-new-student-admin" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 mb-4">Cadastrar Novo Aluno</button>
+                    <div class="relative w-full sm:w-80">
+                        <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" 
+                             xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        
+                        <input type="text" id="searchStudentAdmin" 
+                               class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" 
+                               placeholder="Pesquisar aluno por nome ou ID..."
+                               oninput="filterStudentsAdmin()">
+                    </div>
+                    <div id="edit-student-form-container" class="hidden p-4 mb-6 border border-indigo-300 rounded-lg bg-indigo-50">
+                        <h3 id="edit-form-title" class="text-xl font-bold mb-3 text-indigo-800">Cadastrar Novo Aluno</h3>
+                        <input type="hidden" id="edit-id-holder">
+                        <input type="text" id="edit-name" placeholder="Nome Completo" class="w-full p-2 border rounded mb-2">
+                        <input type="text" id="edit-phone" placeholder="Telefone" class="w-full p-2 border rounded mb-2">
+                        <input type="date" id="edit-expiry-date" class="w-full p-2 border rounded mb-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Aulas Matriculadas (Multi-seleção):</label>
+                        <select id="edit-enrollment" multiple class="w-full p-2 border rounded mb-4 select-multiple-height">
+                            </select>
+                        <div class="flex space-x-2">
+                            <button id="btn-save-student" class="flex-1 p-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Salvar Aluno</button>
+                            <button id="btn-cancel-edit" class="flex-1 p-2 bg-gray-500 text-white rounded hover:bg-gray-600">Cancelar</button>
+                        </div>
+                    
+
+                    </div>
+                    
+                    <div id="student-list-table">
+                        </div>
+                </div>
+                
+                <div class="sub-view hidden p-6 bg-white rounded-lg shadow" id="admin-manage-schedule-view">
+                    <h2 class="text-2xl font-bold mb-4 text-indigo-700">Gerenciar Grade de Horários</h2>
+                    <button id="btn-add-new-class-admin" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 mb-4">Adicionar Nova Aula</button>
+                    
+                    <div id="edit-class-form-container" class="hidden p-4 mb-6 border border-purple-300 rounded-lg bg-purple-50">
+                        <h3 id="edit-class-form-title" class="text-xl font-bold mb-3 text-purple-800">Cadastrar Nova Aula</h3>
+                        <input type="hidden" id="edit-class-id-holder">
+                        <input type="text" id="edit-class-modalidade" placeholder="Modalidade (Ex: Natação Adulto)" class="w-full p-2 border rounded mb-2">
+                        
+                        <div class="flex gap-2 mb-2">
+                             <select id="edit-class-dia" class="w-1/2 p-2 border rounded">
+                                <option value="">Selecione o Dia</option>
+                                <option value="Segunda">Segunda</option>
+                                <option value="Terça">Terça</option>
+                                <option value="Quarta">Quarta</option>
+                                <option value="Quinta">Quinta</option>
+                                <option value="Sexta">Sexta</option>
+                                <option value="Sábado">Sábado</option>
+                                <option value="Domingo">Domingo</option>
+                             </select>
+                             <input type="text" id="edit-class-horario" placeholder="Horário (Ex: 08:30 ou 06:00 - 22:00)" class="w-1/2 p-2 border rounded">
+                        </div>
+                        <div class="flex gap-2 mb-4">
+                            <input type="text" id="edit-class-professor" placeholder="Professor" class="w-1/3 p-2 border rounded">
+                            <input type="number" id="edit-class-capacidade" placeholder="Capacidade" value="1" min="1" class="w-1/3 p-2 border rounded">
+                            <input type="text" id="edit-class-token" placeholder="Token (Ex: LOR0830 ou MUSC)" class="w-1/3 p-2 border rounded uppercase">
+                        </div>
+
+                        <div class="flex space-x-2">
+                            <button id="btn-save-class" class="flex-1 p-2 bg-purple-600 text-white rounded hover:bg-purple-700">Salvar Aula</button>
+                            <button id="btn-cancel-class-edit" class="flex-1 p-2 bg-gray-500 text-white rounded hover:bg-gray-600">Cancelar</button>
+                        </div>
+                    </div>
+
+                    <div id="schedule-list-container">
+                        </div>
+                </div>
+
+                <div class="sub-view hidden p-6 bg-white rounded-lg shadow" id="admin-history-view">
+                    <h2 class="text-2xl font-bold mb-4 text-indigo-700">Histórico de Check-in</h2>
+                    
+                    <div class="p-4 mb-4 border rounded-lg bg-gray-50">
+                        <h4 class="font-semibold mb-3">Filtros (<span id="countDisplay" class="font-bold text-indigo-600">0</span> registros)</h4>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 items-end">
+                            
+                            <div>
+                                <label for="startDate" class="block text-sm font-medium text-gray-700 mb-0.5">Data Início</label>
+                                <input type="date" id="startDate" class="w-full p-2 border border-gray-300 rounded-lg" onchange="applyFilters()">
+                            </div>
+                            
+                            <div>
+                                <label for="endDate" class="block text-sm font-medium text-gray-700 mb-0.5">Data Final</label>
+                                <input type="date" id="endDate" class="w-full p-2 border border-gray-300 rounded-lg" onchange="applyFilters()">
+                            </div>
+                            
+                            <div>
+                                <label for="modalidadeFilter" class="block text-sm font-medium text-gray-700 mb-0.5">Modalidade</label>
+                                <select id="modalidadeFilter" class="w-full p-2 border border-gray-300 rounded-lg" onchange="applyFilters()">
+                                    <option value="">Todas</option>
+                                    </select>
+                            </div>
+                            
+                            <div>
+                                <label for="professorFilter" class="block text-sm font-medium text-gray-700 mb-0.5">Professor</label>
+                                <select id="professorFilter" class="w-full p-2 border border-gray-300 rounded-lg" onchange="applyFilters()">
+                                    <option value="">Todos</option>
+                                    </select>
+                            </div>
+                            
+                            <div>
+                                <label for="horarioFilter" class="block text-sm font-medium text-gray-700 mb-0.5">Horário</label>
+                                <select id="horarioFilter" class="w-full p-2 border border-gray-300 rounded-lg" onchange="applyFilters()">
+                                    <option value="">Todos</option>
+                                    </select>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-0.5 invisible">Ações</label> 
+                                <div class="flex space-x-2">
+                                    <button id="applyFiltersBtn" class="flex-1 p-2 bg-indigo-600 text-white rounded hover:bg-indigo-700" onclick="applyFilters()">Aplicar</button>
+                                    <button id="clearAllFiltersBtn" onclick="clearAllFilters()" class="flex-1 p-2 bg-gray-500 text-white rounded hover:bg-gray-600">Limpar</button>
+                                </div>
+                            </div>
+                
+                            <div class="relative col-span-1">
+                                <label for="searchStudentHistory" class="block text-sm font-medium text-gray-700 mb-0.5">Pesquisar Aluno/ID</label>
+                                <svg class="absolute left-3 top-[2.1rem] transform -translate-y-1/2 h-5 w-5 text-gray-400" 
+                                     xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                <input type="text" id="searchStudentHistory" 
+                                       class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" 
+                                       placeholder="Nome ou ID"
+                                       oninput="renderCheckinHistory()">
+                            </div>
+                            
+                        </div> </div> <div id="loadingIndicator" class="text-center p-4 text-indigo-600 hidden">Carregando histórico...</div>
+                    <div id="historyContent" class="mt-4">
+                        </div>
+                </div>
+
+            </div>
+        </div>
+        
+    </div>
+
+    <div id="qrCodeModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl text-center">
+            <h4 class="text-xl font-bold mb-4 text-indigo-700">QR Code de Acesso</h4>
+            <div id="qrcodeDisplay" class="flex justify-center mb-4"></div>
+            <p class="text-sm text-gray-600">Use este código para identificar o aluno.</p>
+            <button id="closeQrCodeModalBtn" onclick="closeQrCodeModal()" class="mt-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">Fechar</button>
+        </div>
+    </div>
+
+    <div id="adminScannerModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl text-center w-full max-w-lg">
+            <h4 class="text-xl font-bold mb-4 text-indigo-700">Escanear QR Code</h4>
+            <div id="admin-qr-reader" class="w-full flex justify-center mb-4"></div>
+            <p id="admin-qr-status" class="text-sm text-red-500 mb-4"></p>
+            <button id="closeAdminScannerBtn" class="mt-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">Cancelar</button>
+        </div>
+    </div>
+
+    <div id="gradeModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-4 text-indigo-700">Grade de Horários Completa</h3>
+            <div id="gradeContent" class="divide-y divide-gray-100">
+                </div>
+            <button id="closeGradeModalBtn" class="mt-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">Fechar</button>
+        </div>
+    </div>
+
+
+    <script>
+        // --- CRITÉRIOS DE VALIDAÇÃO (EDITÁVEIS) ---
+        const JANELA_ANTES_MINUTOS = 15;
+        const JANELA_DEPOIS_MINUTOS = 30;
+        const ADMIN_PASSWORD = 'admin123'; // 🔑 Senha de acesso admin
+
+        // --- Constantes IndexedDB ---
+        const DB_NAME = 'GymCheckinDB';
+        const DB_VERSION = 11; 
+        const STORE_CHECKINS = 'checkins';
+        const STORE_PROFILES = 'profiles';
+        const STORE_SCHEDULE = 'schedule';
+
+        let dbInstance = null;
+        let qrCodeScannerAdmin = null;
+        let currentProfile = null; 
+        let allCheckins = [];
+        let ALL_CLASS_OPTIONS = [];
+        let allProfiles = [];
+        let GRADE_SCHEDULE_RUNTIME = {};
+        let classRefreshInterval = null; // NOVO: Variável para o timer de atualização de aulas
+        let FIREBASE_DB = null;
+
+        // --- Dados da Grade e Utilitários de Tempo ---
+        const DAYS_OF_WEEK_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+        const DAY_ORDER_MAP = {
+            'Domingo': 7, 
+            'Segunda': 1,
+            'Terça': 2,
+            'Quarta': 3,
+            'Quinta': 4,
+            'Sexta': 5,
+            'Sábado': 6
+        };
+
+        // Dados da grade hardcoded original (APENAS PARA MIGRAÇÃO INICIAL)
+        const HARDCODED_GRADE_SCHEDULE = {
+            "Hidroginástica": {
+                "Segunda": [{"horario": "07:00", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-SEG-0700-LOR", "token": "LOR0700"}, {"horario": "08:20", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-SEG-0820-LOR", "token": "LOR0820"}, {"horario": "17:10", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-SEG-1710-VAN", "token": "VAN1710"}, {"horario": "19:10", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-SEG-1910-VAN", "token": "VAN1910"}],
+                "Terça": [{"horario": "07:40", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-TER-0740-LOR", "token": "LOR0740"}, {"horario": "08:20", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-TER-0820-LOR", "token": "LOR0820"}, {"horario": "15:40", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-TER-1540-VAN", "token": "VAN1540"}, {"horario": "16:20", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-TER-1620-VAN", "token": "VAN1620"}, {"horario": "18:30", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-TER-1830-VAN", "token": "VAN1830"}],
+                "Quarta": [{"horario": "07:00", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-QUA-0700-LOR", "token": "LOR0700"}, {"horario": "08:20", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-QUA-0820-LOR", "token": "LOR0820"}, {"horario": "17:10", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-QUA-1710-VAN", "token": "VAN1710"}, {"horario": "19:10", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-QUA-1910-VAN", "token": "VAN1910"}],
+                "Quinta": [{"horario": "07:40", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-QUI-0740-LOR", "token": "LOR0740"}, {"horario": "08:20", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-QUI-0820-LOR", "token": "LOR0820"}, {"horario": "15:40", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-QUI-1540-VAN", "token": "VAN1540"}, {"horario": "16:20", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-QUI-1620-VAN", "token": "VAN1620"}, {"horario": "18:30", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-QUI-1830-VAN", "token": "VAN1830"}],
+                "Sexta": [{"horario": "07:00", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-SEX-0700-LOR", "token": "LOR0700"}, {"horario": "08:20", "professor": "Lorena", "capacidade": 30, "id": "HIDRO-SEX-0820-LOR", "token": "LOR0820"}, {"horario": "17:10", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-SEX-1710-VAN", "token": "VAN1710"}, {"horario": "19:10", "professor": "Vanessa", "capacidade": 30, "id": "HIDRO-SEX-1910-VAN", "token": "VAN1910"}]
+            },
+            "Natação 1 a 3 anos": {
+                "Segunda": [{"horario": "15:50", "professor": "Vanessa", "capacidade": 6, "id": "NATA1-SEG-1550-VAN", "token": "NATA1VAN1550"}],
+                "Terça": [{"horario": "09:40", "professor": "Lorena", "capacidade": 6, "id": "NATA1-TER-0940-LOR", "token": "NATA1LOR0940"}],
+                "Quarta": [{"horario": "15:50", "professor": "Vanessa", "capacidade": 6, "id": "NATA1-QUA-1550-VAN", "token": "NATA1VAN1550"}],
+                "Quinta": [{"horario": "09:40", "professor": "Lorena", "capacidade": 6, "id": "NATA1-QUI-0940-LOR", "token": "NATA1LOR0940"}],
+                "Sexta": [{"horario": "15:50", "professor": "Vanessa", "capacidade": 6, "id": "NATA1-SEX-1550-VAN", "token": "NATA1VAN1550"}]
+            },
+            "Natação 2 a 4 anos": {
+                "Terça": [{"horario": "17:30", "professor": "Vanessa", "capacidade": 6, "id": "NATA2-TER-1730-VAN", "token": "NATA2VAN1730"}],
+                "Quinta": [{"horario": "17:30", "professor": "Vanessa", "capacidade": 6, "id": "NATA2-QUI-1730-VAN", "token": "NATA2VAN1730"}]
+            },
+            "Natação 4 a 6 anos": {
+                "Segunda": [{"horario": "09:40", "professor": "Lorena", "capacidade": 6, "id": "NATA4-SEG-0940-LOR", "token": "NATA4LOR0940"}, {"horario": "14:40", "professor": "Vanessa", "capacidade": 6, "id": "NATA4-SEG-1440-VAN", "token": "NATA4VAN1440"}],
+                "Terça": [{"horario": "14:30", "professor": "Vanessa", "capacidade": 6, "id": "NATA4-TER-1430-VAN", "token": "NATA4VAN1430"}, {"horario": "17:00", "professor": "Vanessa", "capacidade": 6, "id": "NATA4-TER-1700-VAN", "token": "NATA4VAN1700"}, {"horario": "18:00", "professor": "Vanessa", "capacidade": 6, "id": "NATA4-TER-1800-VAN", "token": "NATA4VAN1800"}],
+                "Quarta": [{"horario": "09:40", "professor": "Lorena", "capacidade": 6, "id": "NATA4-QUA-0940-LOR", "token": "NATA4LOR0940"}, {"horario": "14:40", "professor": "Vanessa", "capacidade": 6, "id": "NATA4-QUA-1440-VAN", "token": "NATA4VAN1440"}],
+                "Quinta": [{"horario": "14:30", "professor": "Vanessa", "capacidade": 6, "id": "NATA4-QUI-1430-VAN", "token": "NATA4VAN1430"}, {"horario": "17:00", "professor": "Vanessa", "capacidade": 6, "id": "NATA4-QUI-1700-VAN", "token": "NATA4VAN1700"}, {"horario": "18:00", "professor": "Vanessa", "capacidade": 6, "id": "NATA4-QUI-1800-VAN", "token": "NATA4VAN1800"}],
+                "Sexta": [{"horario": "09:40", "professor": "Lorena", "capacidade": 6, "id": "NATA4-SEX-0940-LOR", "token": "NATA4LOR0940"}, {"horario": "14:40", "professor": "Vanessa", "capacidade": 6, "id": "NATA4-SEX-1440-VAN", "token": "NATA4VAN1440"}]
+            },
+            "Natação 6 a 10 anos": {
+                "Segunda": [{"horario": "09:00", "professor": "Lorena", "capacidade": 8, "id": "NATA6-SEG-0900-LOR", "token": "NATA6LOR0900"}],
+                "Terça": [{"horario": "09:00", "professor": "Lorena", "capacidade": 8, "id": "NATA6-TER-0900-LOR", "token": "NATA6LOR0900"}],
+                "Quarta": [{"horario": "09:00", "professor": "Lorena", "capacidade": 8, "id": "NATA6-QUA-0900-LOR", "token": "NATA6LOR0900"}],
+                "Quinta": [{"horario": "09:00", "professor": "Lorena", "capacidade": 8, "id": "NATA6-QUI-0900-LOR", "token": "NATA6LOR0900"}],
+                "Sexta": [{"horario": "09:00", "professor": "Lorena", "capacidade": 8, "id": "NATA6-SEX-0900-LOR", "token": "NATA6LOR0900"}]
+            },
+            "Natação Adulto": {
+                "Terça": [{"horario": "06:00", "professor": "Lorena", "capacidade": 10, "id": "NATAAD-TER-0600-LOR", "token": "NATAADLOR0600"}, {"horario": "19:40", "professor": "Vanessa", "capacidade": 10, "id": "NATAAD-TER-1940-VAN", "token": "NATAADVAN1940"}],
+                "Quinta": [{"horario": "06:00", "professor": "Lorena", "capacidade": 10, "id": "NATAAD-QUI-0600-LOR", "token": "NATAADLOR0600"}, {"horario": "19:40", "professor": "Vanessa", "capacidade": 10, "id": "NATAAD-QUI-1940-VAN", "token": "NATAADVAN1940"}]
+            },
+            "Musculação": {
+                "Segunda": [{"horario": "06:00 - 22:00", "professor": "Vários", "capacidade": 100, "id": "MUSC-SEG", "token": "MUSC"}],
+                "Terça": [{"horario": "06:00 - 22:00", "professor": "Vários", "capacidade": 100, "id": "MUSC-TER", "token": "MUSC"}],
+                "Quarta": [{"horario": "06:00 - 22:00", "professor": "Vários", "capacidade": 100, "id": "MUSC-QUA", "token": "MUSC"}],
+                "Quinta": [{"horario": "06:00 - 22:00", "professor": "Vários", "capacidade": 100, "id": "MUSC-QUI", "token": "MUSC"}],
+                "Sexta": [{"horario": "06:00 - 21:00", "professor": "Vários", "capacidade": 100, "id": "MUSC-SEX", "token": "MUSC"}],
+                "Sábado": [{"horario": "08:00 - 12:00", "professor": "Vários", "capacidade": 50, "id": "MUSC-SAB", "token": "MUSC"}]
+            }
+        };
+
+        const QR_SCANNER_CONFIG = {
+            fps: 25,
+            qrbox: { width: 200, height: 200 }, 
+            videoConstraints: {
+                facingMode: { ideal: "environment" }, 
+                width: {ideal: 1920 },
+                height: {ideal: 1080 }
+                
+            }
+        };
+
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCJJ0oMna9mMH948OPZm_Fa-VcLzeSb_9Q",
+            authDomain: "gym-checkin-pro.firebaseapp.com",
+            projectId: "gym-checkin-pro",
+            storageBucket: "gym-checkin-pro.firebasestorage.app",
+            messagingSenderId: "1067829447294",
+            appId: "1:1067829447294:web:6aec373b92ea91bc13662f",
+            measurementId: "G-T9TR5Q471L"
+        };
+
+
+        // Função para Inicializar o Firebase e o Firestore
+        function initFirebase() {
+            try {
+                // Se já estiver inicializado, não faça nada
+                if (firebase.apps.length > 0) {
+                    console.log("Firebase já inicializado.");
+                    return;
+                }
+                
+                const app = firebase.initializeApp(firebaseConfig);
+                FIREBASE_DB = firebase.firestore();
+                console.log("Firebase e Firestore inicializados com sucesso!");
+                
+            } catch (e) {
+                console.error("Erro ao inicializar Firebase:", e);
+                showMessageBox('Erro Crítico', 'Falha ao conectar ao banco de dados na nuvem.', 'error');
+            }
+        }
+
+        // --- Funções de Utilitários de Tempo e Formatação (SEM ALTERAÇÃO) ---
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            const options = {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: false
+            };
+            return new Intl.DateTimeFormat('pt-BR', options).format(date);
+        }
+
+        function formatDate(dateIn) {
+            const date = typeof dateIn === 'string' ? new Date(dateIn.replace(/-/g, '/')) : dateIn;
+            if (isNaN(date)) return 'N/A';
+            return date.toLocaleDateString('pt-BR');
+        }
+
+        function getUniqueUserId() {
+            return 'A' + Date.now().toString(36) + Math.random().toString(36).substring(2);
+        }
+
+        function getExpirationStatus(expiryDateStr) {
+            const today = new Date();
+            const expiryDate = new Date(expiryDateStr);
+            expiryDate.setHours(23, 59, 59, 999);
+
+            const expired = today > expiryDate;
+            const display = formatDate(expiryDate);
+
+            return { expired, display };
+        }
+
+        // --- IndexedDB Management (SEM ALTERAÇÃO) ---
+
+        function openDB() {
+             return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(STORE_PROFILES)) {
+                        db.createObjectStore(STORE_PROFILES, { keyPath: 'id' });
+                    }
+                    if (!db.objectStoreNames.contains(STORE_CHECKINS)) {
+                        const checkinStore = db.createObjectStore(STORE_CHECKINS, { keyPath: 'timestamp' });
+                        checkinStore.createIndex('by_token', 'token', { unique: false });
+                        checkinStore.createIndex('by_modalidade', 'modalidade', { unique: false });
+                        checkinStore.createIndex('by_professor', 'professor', { unique: false });
+                        checkinStore.createIndex('by_userId', 'userId', { unique: false });
+                    }
+                    if (!db.objectStoreNames.contains(STORE_SCHEDULE)) {
+                        const scheduleStore = db.createObjectStore(STORE_SCHEDULE, { keyPath: 'id' });
+                        scheduleStore.createIndex('by_modalidade', 'modalidade', { unique: false });
+                        scheduleStore.createIndex('by_professor', 'professor', { unique: false });
+                        scheduleStore.createIndex('by_horario', 'horario', { unique: false });
+                        scheduleStore.createIndex('by_token', 'token', { unique: false });
+                    }
+                };
+
+                request.onsuccess = (event) => {
+                    dbInstance = event.target.result;
+                    resolve(dbInstance);
+                };
+
+                request.onerror = (e) => {
+                    console.error('Erro ao abrir IndexedDB:', e);
+                    showMessageBox('Erro Crítico', 'Não foi possível inicializar o banco de dados local.', 'error');
+                    reject(e);
+                };
+            });
+        }
+
+        function flattenGradeSchedule(grade) {
+            const flattened = [];
+            for (const modalidade in grade) {
+                for (const dia in grade[modalidade]) {
+                    grade[modalidade][dia].forEach(aula => {
+                        flattened.push({
+                            ...aula,
+                            modalidade: modalidade,
+                            dia: dia
+                        });
+                    });
+                }
+            }
+            return flattened;
+        }
+
+        async function getAllClassInstances() {
+             if (!dbInstance) await openDB();
+            return new Promise((resolve, reject) => {
+                const transaction = dbInstance.transaction([STORE_SCHEDULE], 'readonly');
+                const store = transaction.objectStore(STORE_SCHEDULE);
+                const request = store.getAll();
+                request.onsuccess = (event) => resolve(event.target.result);
+                request.onerror = (e) => {
+                    console.error('Erro ao buscar instâncias de aula:', e);
+                    reject(e);
+                };
+            });
+        }
+
+        async function loadScheduleFromDB() {
+            try {
+                // Tenta buscar do Firestore
+                let allInstances = await getAllClassInstances(); 
+                
+                // Se o Firestore estiver vazio, executa a migração dos dados fixos
+                if (allInstances.length === 0) {
+                    allInstances = await migrateHardcodedSchedule();
+                }
+                
+                // O restante da lógica permanece igual (popula as variáveis globais ALL_CLASS_OPTIONS e GRADE_SCHEDULE_RUNTIME)
+                ALL_CLASS_OPTIONS = allInstances;
+                
+                GRADE_SCHEDULE_RUNTIME = {};
+                ALL_CLASS_OPTIONS.forEach(aula => {
+                    const modalidade = aula.modalidade;
+                    const dia = aula.dia;
+                    
+                    if (!GRADE_SCHEDULE_RUNTIME[modalidade]) {
+                        GRADE_SCHEDULE_RUNTIME[modalidade] = {};
+                    }
+                    if (!GRADE_SCHEDULE_RUNTIME[modalidade][dia]) {
+                        GRADE_SCHEDULE_RUNTIME[modalidade][dia] = [];
+                    }
+                    GRADE_SCHEDULE_RUNTIME[modalidade][dia].push(aula);
+                });
+
+                console.log(`Grade de horários carregada. Total de aulas: ${ALL_CLASS_OPTIONS.length}`);
+                
+            } catch (e) {
+                console.error('Erro ao carregar Grade de Horários (Firestore):', e);
+                showMessageBox('Erro de Carga', 'Não foi possível carregar a grade de horários da nuvem.', 'error');
+            }
+        }
+
+        async function migrateHardcodedSchedule() {
+             if (!dbInstance) await openDB();
+            const flattened = flattenGradeSchedule(HARDCODED_GRADE_SCHEDULE);
+            const transaction = dbInstance.transaction([STORE_SCHEDULE], 'readwrite');
+            const store = transaction.objectStore(STORE_SCHEDULE);
+            for (const aula of flattened) {
+                store.put(aula);
+            }
+            return new Promise((resolve, reject) => {
+                transaction.oncomplete = () => {
+                    console.log("Migração da grade concluída.");
+                    resolve();
+                };
+                transaction.onerror = (e) => {
+                    console.error("Erro na transação de migração:", e);
+                    reject(e);
+                };
+            });
+        }
+
+        // --- Funções de Perfil (CRUD) (SEM ALTERAÇÃO) ---
+
+        async function saveProfileToDB(profile) {
+            if (!FIREBASE_DB) throw new Error("Firestore não está inicializado.");
+            
+            // Usa o ID do perfil (token QR Code ou ID) como ID do Documento
+            const profileRef = FIREBASE_DB.collection(STORE_PROFILES).doc(profile.id);
+
+            try {
+                // O método set com { merge: true } garante a atualização (se existir) ou criação (se for novo).
+                await profileRef.set(profile, { merge: true });
+                
+                console.log(`Perfil ${profile.name} salvo/atualizado no Firestore.`);
+                return true;
+            } catch (e) {
+                console.error("Erro ao salvar perfil no Firestore:", e);
+                showMessageBox('Erro', `Falha ao salvar perfil de ${profile.name} na nuvem.`, 'error');
+                return false;
+            }
+        }
+
+                // VERSÃO FIRESTORE:
+        async function getProfile(id) {
+            if (!FIREBASE_DB) {
+                // Fallback para IndexedDB se o Firebase não estiver ativo (APENAS PARA GARANTIA)
+                return getProfileLocal(id); 
+            }
+            
+            try {
+                const docRef = FIREBASE_DB.collection(STORE_PROFILES).doc(id);
+                const docSnap = await docRef.get();
+
+                if (docSnap.exists) {
+                    let profile = docSnap.data();
+                    
+                    // Mantenha as correções críticas para garantir arrays
+                    if (!profile.enrollment) profile.enrollment = [];
+                    if (!profile.history) profile.history = [];
+                    
+                    return profile;
+                } else {
+                    // Se não encontrar na nuvem, retorna null
+                    return null;
+                }
+            } catch (e) {
+                console.error("Erro ao buscar perfil no Firestore:", e);
+                // Em caso de erro, tenta buscar a versão local como fallback
+                return getProfileLocal(id); 
+            }
+        }
+
+        // NOVO: Função de Fallback (IndexedDB)
+        async function getProfileLocal(id) {
+            if (!dbInstance) await openDB();
+            return new Promise((resolve) => {
+                const transaction = dbInstance.transaction([STORE_PROFILES], 'readonly');
+                const store = transaction.objectStore(STORE_PROFILES);
+                const request = store.get(id);
+                
+                request.onsuccess = (event) => {
+                    let profile = event.target.result;
+                    if (profile) {
+                        // Garante que enrollment e history existam (necessário para o seu código)
+                        if (!profile.enrollment) profile.enrollment = [];
+                        if (!profile.history) profile.history = [];
+                    }
+                    resolve(profile);
+                };
+                request.onerror = () => resolve(null);
+            });
+        }
+
+
+                // VERSÃO FIRESTORE:
+        async function getAllProfiles() {
+            if (!FIREBASE_DB) return []; // Retorna vazio se não houver conexão
+            
+            try {
+                const snapshot = await FIREBASE_DB.collection(STORE_PROFILES)
+                    .orderBy('name') 
+                    .get();
+                    
+                const profiles = [];
+                snapshot.forEach(doc => {
+                    profiles.push(doc.data());
+                });
+                
+                // **IMPORTANTE:** Atualiza a variável global usada na aplicação
+                // A variável 'allProfiles' que você usou na versão IndexedDB
+                window.ALL_STUDENTS_PROFILES = profiles; 
+                
+                console.log(`Perfis de alunos carregados do Firestore. Total: ${profiles.length}`);
+                
+                return profiles;
+                
+            } catch (e) {
+                console.error("Erro ao carregar perfis do Firestore:", e);
+                showMessageBox('Erro de Carga', 'Não foi possível carregar os perfis de alunos da nuvem.', 'error');
+                return [];
+            }
+        }
+
+
+        // VERSÃO FIRESTORE:
+        async function deleteProfile(id) {
+            if (!FIREBASE_DB) throw new Error("Firestore não está inicializado.");
+            
+            try {
+                // 1. Deleta do Firestore (a nuvem)
+                await FIREBASE_DB.collection(STORE_PROFILES).doc(id).delete();
+                
+                // 2. Deleta do IndexedDB local (boa prática para limpar o cache)
+                await deleteProfileLocalCache(id);
+                
+                console.log(`Perfil ${id} deletado do Firestore e do cache local.`);
+                return true;
+
+            } catch (e) {
+                console.error("Erro ao deletar perfil no Firestore:", e);
+                showMessageBox('Erro', 'Falha ao deletar perfil na nuvem.', 'error');
+                return false;
+            }
+        }
+
+        // NOVO: Função de deleção de cache (IndexedDB)
+        async function deleteProfileLocalCache(id) {
+            if (!dbInstance) await openDB();
+            return new Promise((resolve, reject) => {
+                const transaction = dbInstance.transaction([STORE_PROFILES], 'readwrite');
+                const store = transaction.objectStore(STORE_PROFILES);
+                const request = store.delete(id);
+                request.onsuccess = () => resolve();
+                request.onerror = (e) => {
+                    console.warn('Aviso: Falha ao deletar perfil do cache local (IndexedDB).', e);
+                    resolve(); // Resolve mesmo com erro no cache, pois o principal (Firestore) foi excluído.
+                };
+            });
+        }
+
+        // --- Funções de MIGRAÇÃO INICIAL (UMA ÚNICA VEZ) ---
+
+                // NOVO: Função para migrar perfis locais para a nuvem
+        async function migrateLocalProfilesToCloud() {
+            console.log("Verificando se há perfis locais para migrar...");
+            
+            // Usa a versão local da função para buscar todos os perfis do IndexedDB
+            const localProfiles = await getAllProfilesLocal(); 
+            
+            if (localProfiles.length > 0) {
+                console.log(`Encontrados ${localProfiles.length} perfis locais. Iniciando migração para o Firestore.`);
+                
+                let successCount = 0;
+                for (const profile of localProfiles) {
+                    try {
+                        // Usa a nova função de salvamento do Firestore
+                        await saveProfileToDB(profile); 
+                        successCount++;
+                    } catch (e) {
+                        console.error(`Falha ao migrar perfil ${profile.id}:`, e);
+                    }
+                }
+                
+                if (successCount > 0) {
+                    showMessageBox('Migração de Perfis', `${successCount} perfis de alunos migrados para o Cloud Firestore com sucesso!`, 'success');
+                }
+            }
+            return localProfiles;
+        }
+
+        // NOVO: Versão IndexedDB para buscar todos (necessário para a migração)
+        async function getAllProfilesLocal() {
+            if (!dbInstance) await openDB();
+            return new Promise((resolve, reject) => {
+                const transaction = dbInstance.transaction([STORE_PROFILES], 'readonly');
+                const store = transaction.objectStore(STORE_PROFILES);
+                const request = store.getAll();
+                request.onsuccess = (event) => resolve(event.target.result);
+                request.onerror = (e) => {
+                    console.error('Erro ao buscar todos os perfis locais:', e);
+                    reject(e);
+                };
+            });
+        }
+
+
+
+        // --- Funções de Agendamento (CRUD) (FIREBASE IMPLEMENTATION) ---
+
+        async function saveClassInstance(classInstance) {
+            if (!FIREBASE_DB) throw new Error("Firestore não está inicializado.");
+            
+            // Usa o token da aula como ID do documento para fácil referência
+            const classRef = FIREBASE_DB.collection(STORE_SCHEDULE).doc(classInstance.id);
+            
+            // O método set com { merge: true } garante que o documento seja criado (se não existir) ou atualizado.
+            await classRef.set(classInstance, { merge: true });
+        }
+
+        // NOVO: Função para BUSCAR TODOS no Firestore
+        // --------------------------------------------------------
+        async function getAllClassInstances() {
+            if (!FIREBASE_DB) return []; // Retorna vazio se não houver conexão
+            
+            const snapshot = await FIREBASE_DB.collection(STORE_SCHEDULE)
+                // Opcional: Para manter a ordem, podemos ordenar por modalidade e horário
+                .orderBy('modalidade') 
+                .get();
+                
+            const classes = [];
+            snapshot.forEach(doc => {
+                classes.push(doc.data());
+            });
+            
+            return classes;
+        }
+
+        // NOVO: Função para DELETAR no Firestore
+        // --------------------------------------------------------
+        async function deleteClass(id) {
+            if (!FIREBASE_DB) throw new Error("Firestore não está inicializado.");
+            
+            // O id do documento é o id da aula
+            await FIREBASE_DB.collection(STORE_SCHEDULE).doc(id).delete();
+            
+            // Chamada auxiliar para apagar do IndexedDB (apenas para limpar dados locais antigos)
+            try {
+                await deleteClassLocal(id); 
+            } catch (e) {
+                console.warn("Falha ao deletar do IndexedDB local (ignorado se o IndexedDB for descontinuado):", e);
+            }
+        }
+
+        async function deleteClassLocal(id) {
+            if (!dbInstance) await openDB();
+            return new Promise((resolve, reject) => {
+                const transaction = dbInstance.transaction([STORE_SCHEDULE], 'readwrite');
+                const store = transaction.objectStore(STORE_SCHEDULE);
+                const request = store.delete(id);
+                request.onsuccess = () => resolve();
+                request.onerror = (e) => {
+                    console.error('Erro ao deletar instância de aula do DB local:', e);
+                    reject(e);
+                };
+            });
+        }
+
+
+        // --------------------------------------------------------
+        // NOVO: Função para migrar dados fixos (chamada única)
+        // --------------------------------------------------------
+        async function migrateHardcodedSchedule() {
+            console.log("Iniciando migração da grade hardcoded para o Firestore...");
+
+            // 1. A função flattenGradeSchedule transforma o objeto GRANDE em um ARRAY de objetos simples
+            const flattenedSchedule = flattenGradeSchedule(HARDCODED_GRADE_SCHEDULE);
+
+            let successCount = 0;
+            // 2. Itera sobre a lista e salva cada item no Firestore
+            for (const item of flattenedSchedule) {
+                try {
+                    await saveClassInstance(item); // Usa a nova função de salvamento do Firestore!
+                    successCount++;
+                } catch (e) {
+                    console.error(`Falha ao salvar item ${item.id}:`, e);
+                }
+            }
+            
+            if (successCount > 0) {
+                showMessageBox('Migração de Dados', `${successCount} aulas pré-configuradas salvas no Cloud Firestore com sucesso!`, 'success');
+            }
+
+            // Retorna a lista completa de aulas salvas
+            return flattenedSchedule;
+        }
+
+
+        // --- Funções de Check-in (CRUD) (SEM ALTERAÇÃO) ---
+
+        async function addCheckin(checkinData) {
+            if (!FIREBASE_DB) {
+                // Se o Firebase falhar, podemos manter a versão local como fallback de emergência.
+                console.error("Firestore não está inicializado. Tentando salvar localmente.");
+                return addCheckinLocal(checkinData); 
+            }
+            
+            // O Firestore usa o ServerTimestamp para precisão de sincronização.
+            const dataToSave = { 
+                ...checkinData, 
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            try {
+                // Adiciona um novo documento à coleção, deixando o Firestore gerar o ID
+                await FIREBASE_DB.collection(STORE_CHECKINS).add(dataToSave);
+                
+                console.log(`Novo check-in salvo no Firestore para o token: ${checkinData.token}`);
+                
+            } catch (e) {
+                console.error("Erro ao salvar check-in no Firestore:", e);
+                showMessageBox('Erro', 'Falha ao registrar check-in na nuvem. Verifique as regras do Firestore.', 'error');
+                // Em caso de falha na nuvem, podemos salvar localmente para não perder o registro.
+                return addCheckinLocal(checkinData); 
+            }
+        }
+
+        async function getCheckins(filters = {}) {
+            if (!FIREBASE_DB) return getCheckinsLocal(filters); // Fallback
+
+            try {
+                // 1. Consulta Inicial (Firestore)
+                let query = FIREBASE_DB.collection(STORE_CHECKINS);
+                
+                // Sempre ordena por timestamp (descendente = mais recente primeiro)
+                query = query.orderBy('timestamp', 'desc');
+
+                const snapshot = await query.get();
+                    
+                let data = [];
+                snapshot.forEach(doc => {
+                    let record = doc.data();
+                    
+                    // 2. Converte o ServerTimestamp do Firestore para um timestamp JavaScript (número)
+                    if (record.timestamp && typeof record.timestamp.toDate === 'function') {
+                        record.timestamp = record.timestamp.toDate().getTime(); 
+                    }
+                    
+                    data.push(record);
+                });
+                
+                // 3. Aplica todos os filtros complexos restantes no lado do cliente
+                if (filters.userId) {
+                    data = data.filter(c => c.userId === filters.userId);
+                }
+                
+                // Filtros de Data
+                if (filters.startDate) {
+                    const dateString = filters.startDate;
+                    const [year, month, day] = dateString.split('-').map(Number);
+                    const startTS = new Date(year, month - 1, day, 0, 0, 0, 0).getTime();
+                    data = data.filter(c => c.timestamp >= startTS);
+                }
+                if (filters.endDate) {
+                    const dateString = filters.endDate;
+                    const [year, month, day] = dateString.split('-').map(Number);
+                    const endTS = new Date(year, month - 1, day, 23, 59, 59, 999).getTime();
+                    data = data.filter(c => c.timestamp <= endTS);
+                }
+                
+                // Filtros de Modalidade/Professor/Horário
+                if (filters.modalidade) {
+                    data = data.filter(c => c.modalidade === filters.modalidade);
+                }
+                if (filters.professor) {
+                    data = data.filter(c => c.professor === filters.professor);
+                }
+                if (filters.horario) {
+                    data = data.filter(c => c.horario === filters.horario);
+                }
+
+                // 4. Atualiza a variável global (assumindo que seja 'allCheckins' ou 'CHECKIN_HISTORY')
+                window.allCheckins = data; // Use 'window.allCheckins' ou 'window.CHECKIN_HISTORY'
+                
+                console.log(`Histórico de check-ins carregado do Firestore. Total: ${data.length}`);
+                return data;
+
+            } catch (e) {
+                console.error("Erro ao carregar histórico do Firestore:", e);
+                showMessageBox('Erro de Carga', 'Não foi possível carregar o histórico de check-ins da nuvem.', 'error');
+                return getCheckinsLocal(filters); // Tenta buscar localmente em caso de erro
+            }
+        }
+
+        // **NOVO:** Função auxiliar (IndexedDB) para o fallback/migração:
+        async function getCheckinsLocal(filters = {}) {
+            if (!dbInstance) await openDB();
+            return new Promise((resolve, reject) => {
+                // (Mantenha o código original do IndexedDB aqui, com os filtros, se necessário)
+                // ... Seu código original para getCheckins
+                const transaction = dbInstance.transaction([STORE_CHECKINS], 'readonly');
+                const store = transaction.objectStore(STORE_CHECKINS);
+                const request = store.getAll();
+
+                request.onsuccess = (event) => {
+                    let data = event.target.result.sort((a, b) => b.timestamp - a.timestamp);
+                    
+                    // Aplica todos os filtros conforme o seu código original
+                    if (filters.userId) data = data.filter(c => c.userId === filters.userId);
+                    if (filters.startDate) { /* ... lógica de filtro de data ... */ }
+                    // ... todos os outros filtros ...
+
+                    // allCheckins = data; // Se você usa allCheckins localmente, atualize-a aqui
+                    resolve(data);
+                };
+                request.onerror = () => resolve([]);
+            });
+        }
+
+
+
+
+        // **NOVO:** Função auxiliar (IndexedDB) para o fallback, se necessário:
+        async function addCheckinLocal(checkinData) {
+            if (!dbInstance) await openDB();
+            return new Promise((resolve, reject) => {
+                const transaction = dbInstance.transaction([STORE_CHECKINS], 'readwrite');
+                const store = transaction.objectStore(STORE_CHECKINS);
+                const dataToSave = { ...checkinData, timestamp: Date.now() }; // Usa timestamp local
+                const request = store.add(dataToSave);
+                request.onsuccess = () => resolve();
+                request.onerror = (e) => {
+                    console.error('Falha crítica ao salvar check-in localmente.', e);
+                    reject(e);
+                };
+            });
+        }
+
+
+        async function clearAllCheckins() {
+            if (!FIREBASE_DB) throw new Error("Firestore não está inicializado.");
+
+            try {
+                // O Firestore não tem uma função de "apagar tudo". Usamos batch delete:
+                const snapshot = await FIREBASE_DB.collection(STORE_CHECKINS).get();
+                const batch = FIREBASE_DB.batch(); 
+
+                snapshot.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+
+                await batch.commit(); // Executa todas as exclusões
+
+                // Limpa a variável global
+                window.allCheckins = []; 
+                
+                // Tenta limpar o IndexedDB local (boa prática)
+                await clearLocalCheckinsCache(); 
+                
+                console.log('Todo o histórico de check-ins foi apagado do Firestore e do cache.');
+
+            } catch (e) {
+                console.error('Erro ao limpar histórico do Firestore:', e);
+                showMessageBox('Erro', 'Falha ao limpar histórico na nuvem.', 'error');
+                // Você pode relançar o erro ou apenas avisar:
+                throw new Error('Falha ao limpar histórico na nuvem.');
+            }
+        }
+
+        // **NOVO:** Função auxiliar para limpar cache local:
+        async function clearLocalCheckinsCache() {
+            if (!dbInstance) await openDB();
+            return new Promise((resolve, reject) => {
+                const transaction = dbInstance.transaction([STORE_CHECKINS], 'readwrite');
+                const store = transaction.objectStore(STORE_CHECKINS);
+                const request = store.clear();
+                request.onsuccess = () => resolve();
+                request.onerror = (e) => {
+                    console.warn('Aviso: Falha ao limpar cache local de check-ins.', e);
+                    resolve(); 
+                };
+            });
+        }
+
+
+
+        // --- Funções de UI (Gerais) (SEM ALTERAÇÃO) ---
+
+        function showView(viewId) {
+            document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
+            document.getElementById(viewId)?.classList.remove('hidden');
+        }
+
+        async function showAdminSubView(subViewId) { // << AGORA É ASYNC
+            document.querySelectorAll('#admin-sub-views > .sub-view').forEach(view => view.classList.add('hidden'));
+            const targetView = document.getElementById(subViewId);
+            if (targetView) {
+                targetView.classList.remove('hidden');
+            }
+            
+            // NOVO: Para qualquer troca de tela, limpa o intervalo de atualização
+            if (classRefreshInterval) {
+                clearInterval(classRefreshInterval);
+                classRefreshInterval = null;
+            }
+
+            // Ação específica ao mudar de tela admin
+            if (subViewId === 'admin-manage-students-view') {
+                renderStudentManagementTable();
+                populateRegistrationOptions(true); 
+            } else if (subViewId === 'admin-manage-schedule-view') {
+                renderScheduleManagementTable();
+            } else if (subViewId === 'admin-history-view') {
+                populateFilterOptions();
+                renderCheckinHistory();
+            } else if (subViewId === 'admin-quick-checkin-view') {
+                document.getElementById('quickCheckinStudentId').value = '';
+                document.getElementById('quickCheckinStudentId').focus();
+                
+                // Inicializa a lista e o refresh
+                await getCheckins(); // Garante dados de ocupação atualizados
+                renderAvailableClasses();
+                
+                // Auto-refresh a cada 30 segundos para manter a lista e o tempo atualizados
+                classRefreshInterval = setInterval(async () => {
+                    if (document.getElementById('admin-quick-checkin-view').classList.contains('hidden')) {
+                        clearInterval(classRefreshInterval); // Safety check
+                        classRefreshInterval = null;
+                        return;
+                    }
+                    await getCheckins(); 
+                    renderAvailableClasses();
+                }, 30000); 
+
+            }
+            // Esconde os formulários de edição ao mudar de sub-view
+            document.getElementById('edit-student-form-container').classList.add('hidden');
+            document.getElementById('edit-class-form-container').classList.add('hidden');
+        }
+        
+        function closeMessageBox() {
+            document.getElementById('messageOverlay').classList.add('hidden');
+        }
+
+        function showMessageBox(title, detail, type = 'info') {
+            const overlay = document.getElementById('messageOverlay');
+            const box = document.getElementById('messageBox');
+            const titleEl = document.getElementById('messageTitle');
+            const detailEl = document.getElementById('messageDetail');
+            const closeBtn = overlay.querySelector('button'); 
+
+            // 1. Reset classes (base de estilo do modal)
+            box.className = 'p-6 rounded-lg shadow-xl w-full max-w-sm transition duration-300 ease-in-out transform scale-100';
+            closeBtn.className = 'w-full p-2 rounded font-semibold transition duration-150 ease-in-out';
+
+            // 2. Aplica classes de cor e borda
+            if (type === 'success') {
+                box.classList.add('bg-white', 'border-4', 'border-green-500'); 
+                titleEl.classList.add('text-green-700');
+                closeBtn.classList.add('bg-green-500', 'text-white', 'hover:bg-green-600');
+            } else if (type === 'error') {
+                box.classList.add('bg-white', 'border-4', 'border-red-500');
+                titleEl.classList.add('text-red-700');
+                closeBtn.classList.add('bg-red-500', 'text-white', 'hover:bg-red-600');
+            } else if (type === 'warning') {
+                box.classList.add('bg-white', 'border-4', 'border-yellow-500');
+                titleEl.classList.add('text-yellow-700');
+                closeBtn.classList.add('bg-yellow-500', 'text-white', 'hover:bg-yellow-600');
+            } else { // Default/info
+                box.classList.add('bg-white', 'border-4', 'border-indigo-500');
+                titleEl.classList.add('text-indigo-700');
+                closeBtn.classList.add('bg-indigo-500', 'text-white', 'hover:bg-indigo-600');
+            }
+            
+            // 3. Define o conteúdo
+            titleEl.textContent = title;
+            detailEl.innerHTML = detail;
+
+            // 4. Exibe o overlay
+            overlay.classList.remove('hidden');
+        }
+
+        // --- Funções de População de Selects (SEM ALTERAÇÃO) ---
+
+        function populateRegistrationOptions() {
+            const selectEl = document.getElementById('edit-enrollment');
+            if (!selectEl) return;
+
+            // 1. Limpa as opções existentes
+            selectEl.innerHTML = '';
+            
+            // 2. Agrupa e ordena as aulas por Modalidade, Dia e Horário
+            const groupedClasses = {};
+
+            // O ALL_CLASS_OPTIONS deve conter todos os objetos de aula (com id, modalidade, dia, horario, etc.)
+            ALL_CLASS_OPTIONS.forEach(aula => {
+                const category = aula.modalidade; // Agrupa pelo nome da modalidade
+
+                if (!groupedClasses[category]) {
+                    groupedClasses[category] = [];
+                }
+                groupedClasses[category].push(aula);
+            });
+            
+            // 3. Itera sobre os grupos para construir o HTML
+            let htmlOptions = '';
+
+            // Ordena os grupos (Modalidades) por nome
+            const sortedCategories = Object.keys(groupedClasses).sort((a, b) => a.localeCompare(b));
+
+            sortedCategories.forEach(category => {
+                const aulas = groupedClasses[category];
+                
+                // Ordena as aulas dentro de cada grupo por Dia e depois por Horário
+                aulas.sort((a, b) => {
+                    const dayOrderA = DAYS_OF_WEEK_PT.indexOf(a.dia);
+                    const dayOrderB = DAYS_OF_WEEK_PT.indexOf(b.dia);
+                    
+                    if (dayOrderA !== dayOrderB) {
+                        return dayOrderA - dayOrderB;
+                    }
+                    // Se o dia é o mesmo, ordena pelo horário
+                    return a.horario.localeCompare(b.horario);
+                });
+                
+                // Abre o grupo de opções com o nome da Modalidade
+                htmlOptions += `<optgroup label="${category}">`;
+
+                aulas.forEach(aula => {
+                    // Formato da exibição: [Dia - Horário] (Professor)
+                    const label = aula.token === "MUSC" 
+                        ? `${aula.modalidade} (${aula.professor})` // Não precisa de dia/hora se for Musculação
+                        : `${aula.dia} - ${aula.horario} | Prof: ${aula.professor}`;
+
+                    // O valor da opção é o ID único (necessário para o salvamento)
+                    htmlOptions += `<option value="${aula.id}">${label}</option>`;
+                });
+
+                // Fecha o grupo de opções
+                htmlOptions += `</optgroup>`;
+            });
+
+            selectEl.innerHTML = htmlOptions;
+            
+            // Opcional: Atualiza o tamanho do seletor se for necessário (depende do seu CSS)
+            selectEl.classList.add('select-multiple-height');
+            selectEl.setAttribute('multiple', true);
+        }
+
+        
+
+
+        // --- Funções de Grade de Horários (Admin/Modal) (SEM ALTERAÇÃO) ---
+
+        function renderGradeModal() {
+            const gradeContent = document.getElementById('gradeContent');
+            gradeContent.innerHTML = '';
+            let classesFound = false;
+
+            const sortedModalidades = Object.keys(GRADE_SCHEDULE_RUNTIME).sort();
+
+            for (const modalidade of sortedModalidades) {
+                const daysSchedule = GRADE_SCHEDULE_RUNTIME[modalidade];
+                let modalidadeHTML = '';
+                
+                const sortedDays = Object.keys(daysSchedule).sort((a, b) => DAY_ORDER_MAP[a] - DAY_ORDER_MAP[b]);
+
+                for (const day of sortedDays) {
+                    const classes = daysSchedule[day];
+                    classesFound = true;
+                    let classesListHTML = '';
+                    
+                    classes.sort((a, b) => a.horario.localeCompare(b.horario)).forEach(aula => {
+                        const horarioDisplay = aula.horario;
+                        const tokenDisplay = aula.token;
+                        classesListHTML += `<li>${horarioDisplay} <span class="text-gray-500 text-xs">(${tokenDisplay})</span></li>`;
+                    });
+
+                    if (classesListHTML) {
+                        modalidadeHTML += ` 
+                            <div class="p-2 border-b last:border-b-0">
+                                <p class="font-semibold text-gray-800">${day}:</p>
+                                <ul class="list-disc ml-5 text-sm">
+                                    ${classesListHTML}
+                                </ul>
+                            </div>
+                        `;
+                    }
+                }
+
+                if (modalidadeHTML) {
+                    gradeContent.innerHTML += `
+                        <h4 class="text-lg font-bold text-indigo-700 mt-4 mb-2 p-2 bg-indigo-50">${modalidade}</h4>
+                        ${modalidadeHTML}
+                    `;
+                }
+            }
+
+            if (!classesFound) {
+                gradeContent.innerHTML = `<p class="p-4 text-gray-600 italic">Nenhuma aula na grade de horários para exibir.</p>`;
+            }
+
+            document.getElementById('gradeModal').classList.remove('hidden');
+        }
+
+        // --- Funções de Utilitários de Checagem de Aula ---
+
+        function isCurrentTimeInMuscRange(horarioRange) {
+            const parts = horarioRange.split(' - ');
+            if (parts.length !== 2) return false;
+
+            const [startStr, endStr] = parts;
+            const now = new Date();
+            const today = now.toLocaleDateString('en-CA'); 
+
+            const parseTime = (timeStr) => {
+                const [h, m] = timeStr.split(':').map(Number);
+                const date = new Date(`${today} ${timeStr}`);
+                date.setHours(h, m, 0, 0); 
+                return date;
+            };
+
+            let startTime = parseTime(startStr);
+            let endTime = parseTime(endStr);
+            
+            // Lida com horários que passam da meia-noite (embora improvável)
+            if (endTime < startTime) {
+                endTime.setDate(endTime.getDate() + 1);
+            }
+
+            return now >= startTime && now <= endTime;
+        }
+
+        function isClassAvailableNow(aula) {
+             if (aula.token === "MUSC") {
+                 return isCurrentTimeInMuscRange(aula.horario);
+             }
+
+             const now = new Date();
+             const today = now.toLocaleDateString('en-CA'); 
+             const [hourStr, minuteStr] = aula.horario.split(':');
+             
+             const classStartTime = new Date(`${today} ${aula.horario}`);
+             classStartTime.setHours(Number(hourStr), Number(minuteStr), 0, 0);
+
+             const windowStart = new Date(classStartTime.getTime() - JANELA_ANTES_MINUTOS * 60000);
+             const windowEnd = new Date(classStartTime.getTime() + JANELA_DEPOIS_MINUTOS * 60000);
+
+             return now >= windowStart && now <= windowEnd;
+        }
+
+        function getAvailableClassesForQuickCheckin() {
+            const now = new Date();
+            const todayDay = DAYS_OF_WEEK_PT[now.getDay()];
+            const availableClasses = [];
+
+            for (const modalidade in GRADE_SCHEDULE_RUNTIME) {
+                if (GRADE_SCHEDULE_RUNTIME[modalidade][todayDay]) {
+                    GRADE_SCHEDULE_RUNTIME[modalidade][todayDay].forEach(aula => {
+                        if (isClassAvailableNow(aula)) {
+                            availableClasses.push(aula);
+                        }
+                    });
+                }
+            }
+            return availableClasses;
+        }
+        
+        // --- NOVO: Renderiza a lista de aulas abertas ---
+        function renderAvailableClasses() {
+            const listEl = document.getElementById('available-classes-list');
+            if (!listEl) return;
+
+            const availableClasses = getAvailableClassesForQuickCheckin();
+
+            if (availableClasses.length === 0) {
+                listEl.innerHTML = `<p class="text-gray-600 p-2 italic">Nenhuma aula aberta no momento (fora da janela de ${JANELA_ANTES_MINUTOS} minutos antes / ${JANELA_DEPOIS_MINUTOS} minutos depois).</p>`;
+                return;
+            }
+
+            let html = '';
+            
+            // Ordena pela hora de início (Musculação primeiro)
+            availableClasses.sort((a, b) => {
+                if (a.token === "MUSC") return -1; 
+                if (b.token === "MUSC") return 1;
+                return a.horario.localeCompare(b.horario);
+            });
+
+            const todayLocaleDate = new Date().toLocaleDateString('pt-BR');
+
+            availableClasses.forEach(aula => {
+                let timeDisplay;
+                let details;
+                const now = new Date();
+                const [hour, minute] = aula.horario.split(':').map(Number);
+                const classTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute);
+
+                if (aula.token === "MUSC") {
+                    timeDisplay = `<span class="font-bold text-green-700">Aberto Agora</span>`;
+                    details = `${aula.horario} | Prof: ${aula.professor}`;
+                } else {
+                    const timeDiffMinutes = Math.round((classTime.getTime() - now.getTime()) / 60000);
+                    
+                    if (timeDiffMinutes >= 0) {
+                        timeDisplay = `<span class="font-bold text-yellow-700">Começa em ${timeDiffMinutes} min</span>`;
+                    } else {
+                        // Está na janela de DEPOIS (check-in atrasado)
+                        timeDisplay = `<span class="font-bold text-red-700">Atrasado (${-timeDiffMinutes} min)</span>`;
+                    }
+                    details = `${aula.dia}, ${aula.horario} | Prof: ${aula.professor}`;
+                }
+                
+                // Exibe a informação de ocupação (apenas para aulas não-MUSC)
+                let occupancyDisplay = '';
+                if (aula.token !== "MUSC") {
+                     const currentOccupancy = allCheckins.filter(c => {
+                        const checkinDate = new Date(c.timestamp).toLocaleDateString('pt-BR');
+                        // Conta ocupação para a aula específica (modalidade e horário) e que ocorreu HOJE.
+                        return c.modalidade === aula.modalidade && c.horario === aula.horario && checkinDate === todayLocaleDate;
+                    }).length;
+                    
+                    const capacity = aula.capacidade;
+                    occupancyDisplay = ` - Ocupação: <span class="${currentOccupancy >= capacity ? 'text-red-600 font-bold' : 'font-medium'}">${currentOccupancy}/${capacity}</span>`;
+                }
+
+
+                html += `
+                    <div class="p-2 flex justify-between items-center text-sm">
+                        <div>
+                            <p class="font-semibold text-gray-900">${aula.modalidade}</p>
+                            <p class="text-gray-600">${details}${occupancyDisplay}</p>
+                        </div>
+                        <div class="flex-shrink-0">
+                            ${timeDisplay}
+                        </div>
+                    </div>
+                `;
+            });
+            listEl.innerHTML = html;
+        }
+
+
+        // --- NOVA FUNÇÃO: Encontra a aula mais adequada para o check-in automático ---
+        function findStudentCheckinTarget(profile) {
+            console.log("--- INICIANDO VALIDAÇÃO DE CHECK-IN ---");
+            
+            // ************ CORREÇÃO DE ESTRUTURA DE DADOS ************
+            // Transforma o enrollment (que pode ser objetos {id, name}) em uma lista simples de IDs
+            const studentEnrollmentIds = (profile.enrollment || []).map(c => c.id || c); 
+            console.log(`Matrículas do aluno ${profile.name} (IDs):`, studentEnrollmentIds); // LOG 1: Conteúdo da Matrícula
+            console.log(`Matrículas do aluno (Full Data):`, profile.enrollment); // LOG 2: Conteúdo Bruto da Matrícula
+            // ********************************************************
+            
+            // 1. Checagem de Expiração
+            const status = getExpirationStatus(profile.expiryDate);
+            if (status.expired) {
+                console.error(`VALIDAÇÃO FALHOU: Matrícula de ${profile.name} venceu em ${status.display}.`);
+                return { success: false, message: `Matrícula do aluno **${profile.name}** venceu em ${status.display}. Acesso negado.` };
+            }
+
+            console.log(`Status de matrícula de ${profile.name}: ATIVA.`);
+            
+            // 2. Busca de Aulas Disponíveis no Momento (Janela de 15 min antes / 30 min depois)
+            const availableClasses = getAvailableClassesForQuickCheckin();
+            console.log("Aulas disponíveis no momento (Janela de Check-in):", availableClasses); // LOG 3: Aulas Abertas
+            
+            if (availableClasses.length === 0) {
+                console.warn("VALIDAÇÃO FALHOU: Nenhuma aula aberta agora.");
+                return { success: false, message: 'Nenhuma aula disponível para check-in no momento.' };
+            }
+
+            // 3. Filtrar Aulas Disponíveis pela Matrícula do Aluno
+            const validClasses = [];
+            
+            availableClasses.forEach(aula => {
+                // Checa a matrícula na aula específica (pelo ID único da aula)
+                if (aula.token !== "MUSC") {
+                    if (studentEnrollmentIds.includes(aula.id)) { 
+                        console.log(`ALUNO OK: Matriculado na aula específica: ${aula.modalidade} em ${aula.dia} ${aula.horario}.`);
+                        validClasses.push(aula);
+                    }
+                // Checa a matrícula em Musculação (pelo token 'MUSC')
+                } else if (aula.token === "MUSC") {
+                    const isEnrolledInMusculacao = studentEnrollmentIds.some(enrollmentId => {
+                        const enrolledClass = ALL_CLASS_OPTIONS.find(a => a.id === enrollmentId); 
+                        return enrolledClass && enrolledClass.token === "MUSC";
+                    }); 
+                    if (isEnrolledInMusculacao) { 
+                        console.log(`ALUNO OK: Matriculado em Musculação (token: MUSC).`);
+                        if (!validClasses.some(c => c.token === "MUSC")) {
+                            validClasses.push(aula); 
+                        }
+                    } 
+                } 
+            }); 
+            
+            // ... (Continuação da função para resolver conflitos e dar o resultado final) ...
+
+            console.log("Aulas Válidas para Check-in (após filtro de matrícula):", validClasses);
+
+            if (validClasses.length === 0) { 
+                // *** LOG DE FALHA COM INFO COMPLETA ***
+                console.error("DEBUG FATAL: Não foi possível casar. Aulas Abertas:", availableClasses);
+                console.error("DEBUG FATAL: Matrículas do Aluno:", profile.enrollment);
+                // **********************************************
+                console.error("VALIDAÇÃO FALHOU: Nenhuma aula disponível corresponde à matrícula do aluno.");
+                return { success: false, message: 'Nenhuma aula disponível para check-in no momento em que o aluno está matriculado.' }; 
+            } 
+            
+            // 4. Resolução de Conflitos e Prioridade (Lógica da Academia)
+            const muscClass = validClasses.find(c => c.token === "MUSC"); 
+            const nonMuscClasses = validClasses.filter(c => c.token !== "MUSC"); 
+            
+            let targetClass = null;
+
+            // Prioridade 1: Aulas específicas (non-MUSC)
+            if (nonMuscClasses.length === 1) { 
+                targetClass = nonMuscClasses[0];
+            } else if (nonMuscClasses.length > 1) {
+                console.error("VALIDAÇÃO FALHOU: Conflito. Mais de uma aula específica aberta.");
+                return { success: false, message: 'Conflito de Agendamento. Mais de uma aula específica disponível para check-in. Contate o administrador.' }; 
+            } 
+            
+            // Prioridade 2: Apenas Musculação
+            if (!targetClass && muscClass) {
+                targetClass = muscClass;
+            } 
+            
+            if (targetClass) {
+                console.log(`Check-in de ${profile.name} VÁLIDO para: ${targetClass.modalidade} (${targetClass.horario}).`);
+                // REGISTRA O CHECK-IN AQUI
+                return { success: true, classInstance: targetClass };
+            }
+            
+            console.error("VALIDAÇÃO FALHOU: Cenário de validação não resolvido.");
+            return { success: false, message: 'Não foi possível determinar a aula para check-in. (Erro Interno)' };
+        }
+
+        // --- NOVA FUNÇÃO: Lógica de Registro de Check-in (Substitui o core da antiga handleCheckin) ---
+        async function registerCheckin(profile, classInstance) {
+            
+            // 1. Checagem de Duplicidade (Check-in já realizado hoje para esta aula)
+            const now = new Date();
+            const today = now.toLocaleDateString('pt-BR');
+            const checkinAlreadyDone = allCheckins.some(c => {
+                const checkinDate = new Date(c.timestamp).toLocaleDateString('pt-BR');
+                // Checa se o aluno fez checkin na mesma modalidade E horário hoje (importante para evitar checkin em duas aulas específicas seguidas)
+                return c.userId === profile.id && c.modalidade === classInstance.modalidade && c.horario === classInstance.horario && checkinDate === today;
+            });
+
+            if (checkinAlreadyDone) {
+                showMessageBox('Aviso', `Aluno **${profile.name}** já realizou check-in em **${classInstance.modalidade} (${classInstance.horario})** hoje.`, 'warning');
+                return;
+            }
+
+            // 2. Contagem de Ocupação (Para aulas com capacidade limitada)
+            if (classInstance.token !== "MUSC") {
+                const currentOccupancy = allCheckins.filter(c => {
+                    const checkinDate = new Date(c.timestamp).toLocaleDateString('pt-BR');
+                    // Conta ocupação apenas para a aula específica (modalidade e horário)
+                    return c.modalidade === classInstance.modalidade && c.horario === classInstance.horario && checkinDate === today;
+                }).length;
+
+                if (currentOccupancy >= classInstance.capacidade) {
+                    showMessageBox('Aviso', `A aula de **${classInstance.modalidade} (${classInstance.horario})** atingiu a capacidade máxima (${classInstance.capacidade}). Check-in recusado.`, 'error'); // Mudado para erro (bloqueia o check-in)
+                    return;
+                }
+            }
+
+            // 3. Registro do Check-in
+            try {
+                const checkinData = {
+                    userId: profile.id,
+                    name: profile.name,
+                    token: classInstance.token,
+                    modalidade: classInstance.modalidade,
+                    professor: classInstance.professor,
+                    horario: classInstance.horario,
+                };
+                await addCheckin(checkinData);
+                showMessageBox('Check-in Efetuado!', `Aluno **${profile.name}** check-in na aula de **${classInstance.modalidade} (${classInstance.horario})**!`, 'success');
+                
+                // Limpa o campo do ID do aluno e foca para o próximo
+                document.getElementById('quickCheckinStudentId').value = ''; 
+                document.getElementById('quickCheckinStudentId').focus(); 
+                
+                // Atualiza o histórico de check-ins, se a view estiver aberta.
+                if (document.getElementById('admin-history-view').classList.contains('hidden') === false) {
+                     renderCheckinHistory();
+                }
+                
+                // NOVO: Atualiza a lista de aulas abertas para refletir a nova ocupação.
+                await getCheckins(); 
+                renderAvailableClasses(); 
+
+            } catch (e) {
+                showMessageBox('Erro', `Falha ao registrar check-in: ${e.message}`, 'error');
+            }
+        }
+
+
+        // --- NOVA FUNÇÃO: Processo Completo de Check-in Automático (Chamada pelo Botão/Scanner) ---
+        async function processAutomaticCheckin(studentId) {
+            // 1. Validar ID
+            if (!studentId) {
+                showMessageBox('Aviso', 'Preencha o ID do Aluno (ou use o scanner).', 'warning');
+                return;
+            }
+            
+            // 2. Obter Perfil
+            const profile = await getProfile(studentId);
+            if (!profile) {
+                showMessageBox('Erro', `Aluno com ID **${studentId}** não encontrado.`, 'error');
+                return;
+            }
+
+            // 3. Checagem de Mensalidade
+            const status = getExpirationStatus(profile.expiryDate);
+            if (status.expired) {
+                showMessageBox('Acesso Negado', `O aluno **${profile.name}** está com mensalidade vencida desde ${status.display}.`, 'error');
+                return;
+            }
+
+            // 4. Encontrar a Aula Válida (Única)
+            const target = findStudentCheckinTarget(profile);
+            
+            if (!target.success) {
+                // Exibe a mensagem de erro/aviso da função target
+                showMessageBox(target.message.includes('Conflito') ? 'Conflito de Agendamento' : 'Acesso Negado', target.message, 'error');
+                return;
+            }
+            
+            // 5. Registrar Check-in
+            await registerCheckin(profile, target.classInstance);
+        }
+
+
+        function closeQrCodeModal() {
+            document.getElementById('qrCodeModal').classList.add('hidden');
+        }
+
+        // --- Funções de Admin (Scanner) ---
+
+        function closeAdminScannerModal() {
+            document.getElementById('adminScannerModal').classList.add('hidden');
+            if (qrCodeScannerAdmin && qrCodeScannerAdmin.getState() === 2) { 
+                qrCodeScannerAdmin.stop().catch(console.error);
+            }
+        }
+
+        const onAdminScanSuccess = async (decodedText) => {
+            closeAdminScannerModal();
+            const studentId = decodedText;
+            await processAutomaticCheckin(studentId);
+        };
+
+        const onAdminScanFailure = (errorMessage) => {
+            // Silencioso.
+        };
+
+        // --- SIMPLIFICADO E ROBUSTO: Inicialização Direta do Scanner ---
+        function openAdminScannerModal() {
+            const modalEl = document.getElementById('adminScannerModal');
+            modalEl.classList.remove('hidden');
+            const readerEl = document.getElementById('admin-qr-reader');
+            readerEl.innerHTML = '';
+            const statusEl = document.getElementById('admin-qr-status');
+            statusEl.textContent = "Escanear QR Code do Aluno...";
+
+            // 1. Verificação da biblioteca
+            if (typeof Html5Qrcode === 'undefined') {
+                 statusEl.textContent = "ERRO: A biblioteca de QR Code não foi carregada. Por favor, inclua o arquivo localmente.";
+                 console.error("Html5Qrcode não está definido.");
+                 return;
+            }
+            
+            // 2. Instanciação
+            if (!qrCodeScannerAdmin) {
+                qrCodeScannerAdmin = new Html5Qrcode("admin-qr-reader");
+            }
+
+            // 3. Inicia o scanner, permitindo que o navegador escolha o dispositivo padrão
+            qrCodeScannerAdmin.start(
+                { facingMode: { ideal: "environment" } }, // Preferência pela câmera traseira/ambiente, mas não obrigatório
+                QR_SCANNER_CONFIG, 
+                onAdminScanSuccess, 
+                onAdminScanFailure
+            ).catch(err => {
+                console.error("Erro ao iniciar scanner:", err);
+                statusEl.textContent = "ERRO: Não foi possível iniciar a câmera. Verifique permissões (HTTPS), se a webcam está conectada e disponível.";
+            });
+        }    
+                    
+
+
+        // --- Funções de Admin (Histórico) (SEM ALTERAÇÃO) ---
+
+        async function renderCheckinHistory() {
+            // Obtém o termo de pesquisa do novo campo de input
+            const searchHistoryTerm = document.getElementById('searchStudentHistory').value.toLowerCase().trim();
+            
+            const historyContent = document.getElementById('historyContent');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const countDisplay = document.getElementById('countDisplay');
+            loadingIndicator.classList.remove('hidden');
+            historyContent.innerHTML = '';
+            countDisplay.textContent = '0';
+
+            try {
+                const filters = {
+                    startDate: document.getElementById('startDate').value,
+                    endDate: document.getElementById('endDate').value,
+                    modalidade: document.getElementById('modalidadeFilter').value,
+                    professor: document.getElementById('professorFilter').value,
+                    horario: document.getElementById('horarioFilter').value
+                };
+                
+                // 1. Busca os check-ins baseados nos filtros de data/aula
+                const checkinsFromDB = await getCheckins(filters);
+                
+                // 2. Aplica o filtro de pesquisa por nome/ID do aluno (NOVO)
+                let checkinsToRender = checkinsFromDB;
+
+                if (searchHistoryTerm) {
+                    checkinsToRender = checkinsFromDB.filter(checkin => {
+                        const nameMatch = checkin.name.toLowerCase().includes(searchHistoryTerm);
+                        // Verifica o ID do aluno. O seu código usa 'userId' para o ID do aluno.
+                        const idMatch = checkin.userId.toLowerCase().includes(searchHistoryTerm); 
+                        return nameMatch || idMatch;
+                    });
+                }
+
+                countDisplay.textContent = checkinsToRender.length; // Usa o total após todos os filtros
+
+                if (checkinsToRender.length === 0) {
+                    historyContent.innerHTML = '<p class="text-gray-500 p-4">Nenhum registro de check-in encontrado com os filtros aplicados.</p>';
+                    loadingIndicator.classList.add('hidden');
+                    return;
+                }
+
+                // --- Geração do HTML (usando checkinsToRender) ---
+                let html = `
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 shadow overflow-hidden sm:rounded-lg">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data/Hora</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aluno (ID)</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aula</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horário</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Professor</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                `;
+
+                // Loop modificado para usar a lista final filtrada
+                checkinsToRender.forEach(checkin => { 
+                    html += `
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatTimestamp(checkin.timestamp)}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">${checkin.name} <span class="text-gray-500 text-xs">(${checkin.userId})</span></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${checkin.modalidade}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${checkin.horario}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${checkin.professor}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `</tbody></table></div>`;
+                historyContent.innerHTML = html;
+
+            } catch (e) {
+                historyContent.innerHTML = `<p class="p-4 text-red-500">Erro ao carregar histórico: ${e.message}</p>`;
+            } finally {
+                loadingIndicator.classList.add('hidden');
+            }
+        }
+
+        async function populateFilterOptions() {
+            const modalidadeSet = new Set();
+            const professorSet = new Set();
+            const horarioSet = new Set();
+
+            ALL_CLASS_OPTIONS.forEach(aula => {
+                modalidadeSet.add(aula.modalidade);
+                professorSet.add(aula.professor);
+                horarioSet.add(aula.horario);
+            });
+
+            const populateSelect = (selectId, dataSet) => {
+                const selectEl = document.getElementById(selectId);
+                if (!selectEl) return;
+                selectEl.innerHTML = '<option value="">Todos</option>';
+                const sortedData = Array.from(dataSet).sort();
+                sortedData.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item;
+                    opt.textContent = item;
+                    selectEl.appendChild(opt);
+                });
+            };
+
+            populateSelect('modalidadeFilter', modalidadeSet);
+            populateSelect('professorFilter', professorSet);
+            populateSelect('horarioFilter', horarioSet);
+        }
+
+        function clearAllFilters() {
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            document.getElementById('modalidadeFilter').value = '';
+            document.getElementById('professorFilter').value = '';
+            document.getElementById('horarioFilter').value = '';
+            renderCheckinHistory();
+        }
+
+        // --- Funções de Gerenciamento de Grade (Admin UI) (SEM ALTERAÇÃO) ---
+
+        function generateClassId(modalidade, dia, horario, professor) {
+            const mod = modalidade.substring(0, 4).toUpperCase();
+            const day = dia.substring(0, 3).toUpperCase();
+            const time = horario.replace(/[^0-9]/g, '').slice(0, 4);
+            const prof = professor.substring(0, 3).toUpperCase();
+            return `${mod}-${day}-${time}-${prof}-${Date.now().toString().slice(-4)}`;
+        }
+
+        function renderScheduleManagementTable() {
+            const container = document.getElementById('schedule-list-container');
+            container.innerHTML = '';
+
+            const classesByModalidade = ALL_CLASS_OPTIONS.reduce((acc, aula) => {
+                if (!acc[aula.modalidade]) {
+                    acc[aula.modalidade] = [];
+                }
+                acc[aula.modalidade].push(aula);
+                return acc;
+            }, {});
+
+            const sortedModalidades = Object.keys(classesByModalidade).sort();
+
+            let html = '';
+
+            sortedModalidades.forEach(modalidade => {
+                const sortedClasses = classesByModalidade[modalidade].sort((a, b) => {
+                    const dayA = DAY_ORDER_MAP[a.dia];
+                    const dayB = DAY_ORDER_MAP[b.dia];
+                    if (dayA !== dayB) return dayA - dayB;
+                    return a.horario.localeCompare(b.horario);
+                });
+
+                html += `
+                    <div class="bg-white border rounded-lg shadow-sm mb-4">
+                        <h4 class="text-lg font-bold p-3 bg-indigo-100 text-indigo-800 rounded-t-lg">${modalidade} <span class="text-sm font-normal text-gray-600">(${sortedClasses.length} Horários)</span></h4>
+                        <div class="divide-y divide-gray-200">
+                `;
+
+                sortedClasses.forEach(aula => {
+                    const statusClass = aula.token === 'MUSC' ? 'text-green-600 font-medium' : 'text-blue-600';
+                    const tokenDisplay = `<span class="${statusClass}">${aula.token}</span>`;
+                    
+                    html += `
+                        <div class="p-3 flex justify-between items-center hover:bg-gray-50">
+                            <div>
+                                <p class="text-base font-semibold text-gray-900">${aula.dia} ${aula.horario}</p>
+                                <p class="text-sm text-gray-600">Prof: ${aula.professor} | Capacidade: ${aula.capacidade} | Token: ${tokenDisplay}</p>
+                            </div>
+                            <div class="space-x-2 flex-shrink-0">
+                                <button onclick="editClass('${aula.id}')" class="px-3 py-1 text-sm bg-yellow-500 text-white rounded hover:bg-yellow-600">Editar</button>
+                                <button onclick="deleteClass('${aula.id}')" class="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600">Excluir</button>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+
+            if (Object.keys(classesByModalidade).length === 0) {
+                 html = '<p class="text-gray-500 p-4">Nenhuma aula cadastrada na grade.</p>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        function editClass(id) {
+             const classInstance = ALL_CLASS_OPTIONS.find(a => a.id === id);
+            if (!classInstance) return;
+
+            document.getElementById('edit-class-id-holder').value = classInstance.id;
+            document.getElementById('edit-class-form-title').textContent = `Editar Aula: ${classInstance.modalidade} - ${classInstance.dia} ${classInstance.horario}`;
+            document.getElementById('edit-class-modalidade').value = classInstance.modalidade;
+            document.getElementById('edit-class-dia').value = classInstance.dia;
+            document.getElementById('edit-class-horario').value = classInstance.horario;
+            document.getElementById('edit-class-professor').value = classInstance.professor;
+            document.getElementById('edit-class-capacidade').value = classInstance.capacidade;
+            document.getElementById('edit-class-token').value = classInstance.token;
+            document.getElementById('edit-class-form-container').classList.remove('hidden');
+        }
+
+        async function saveClassFromAdmin() {
+            const id = document.getElementById('edit-class-id-holder').value;
+            const modalidade = document.getElementById('edit-class-modalidade').value.trim();
+            const dia = document.getElementById('edit-class-dia').value;
+            const horario = document.getElementById('edit-class-horario').value.trim();
+            const professor = document.getElementById('edit-class-professor').value.trim();
+            const capacidade = parseInt(document.getElementById('edit-class-capacidade').value);
+            const token = document.getElementById('edit-class-token').value.trim().toUpperCase();
+
+            if (!modalidade || !dia || !horario || !professor || isNaN(capacidade) || capacidade < 1 || !token) {
+                showMessageBox('Erro de Cadastro', 'Por favor, preencha todos os campos corretamente.', 'warning');
+                return;
+            }
+
+            const classId = id || generateClassId(modalidade, dia, horario, professor);
+
+            const classToSave = {
+                id: classId,
+                modalidade,
+                dia,
+                horario,
+                professor,
+                capacidade,
+                token
+            };
+
+            try {
+                await saveClassInstance(classToSave);
+                await loadScheduleFromDB(); 
+                showMessageBox('Sucesso', `Aula ${modalidade} salva com sucesso!`, 'success');
+                document.getElementById('edit-class-form-container').classList.add('hidden');
+                renderScheduleManagementTable();
+                populateRegistrationOptions();
+                populateFilterOptions();
+            } catch (e) {
+                showMessageBox('Erro', `Falha ao salvar a aula: ${e.message}`, 'error');
+            }
+        }
+
+        async function deleteClass(id) {
+            const classInstance = ALL_CLASS_OPTIONS.find(a => a.id === id);
+            if (!classInstance) return;
+
+            if (!confirm(`Tem certeza que deseja EXCLUIR a aula ${classInstance.modalidade} em ${classInstance.dia} ${classInstance.horario}?`)) return;
+
+            try {
+                await deleteClassInstance(id);
+                await loadScheduleFromDB(); 
+                showMessageBox('Sucesso', 'Aula excluída.', 'success');
+                renderScheduleManagementTable();
+                populateRegistrationOptions();
+                populateFilterOptions();
+            } catch (e) {
+                showMessageBox('Erro', 'Falha ao excluir aula.', 'error');
+            }
+        }
+
+        function filterStudentsAdmin() {
+            const searchTerm = document.getElementById('searchStudentAdmin').value.toLowerCase().trim();
+            
+            // Se o termo de pesquisa estiver vazio, usa todos os perfis carregados (allProfiles)
+            if (!searchTerm) {
+                renderStudentManagementTable(allProfiles);
+                return;
+            }
+            
+            // Filtra os perfis
+            const filteredProfiles = allProfiles.filter(profile => {
+                const nameMatch = profile.name.toLowerCase().includes(searchTerm);
+                const idMatch = profile.id.toLowerCase().includes(searchTerm);
+                return nameMatch || idMatch;
+            });
+            
+            // Renderiza a tabela com os resultados filtrados
+            renderStudentManagementTable(filteredProfiles);
+        }
+
+
+        // --- Funções de Admin (Gerenciamento de Alunos) (SEM ALTERAÇÃO) ---
+
+                // A função agora usa ALL_STUDENTS_PROFILES, que é a variável populada pelo Firestore
+        function renderStudentManagementTable(profilesToRender = ALL_STUDENTS_PROFILES) { 
+            // ^^^ CORREÇÃO AQUI: Mudança de 'allProfiles' para 'ALL_STUDENTS_PROFILES' como padrão
+
+            const container = document.getElementById('student-list-table');
+            if (!container) return; 
+
+            container.innerHTML = '';
+
+            // Verifica o tamanho da lista carregada do Firestore
+            if (ALL_STUDENTS_PROFILES.length === 0) { 
+                container.innerHTML = '<p class="text-gray-500 p-4">Nenhum aluno cadastrado.</p>';
+                return;
+            }
+
+            // Se o argumento 'profilesToRender' foi fornecido, usa ele. Caso contrário, usa a lista global.
+            const listToRender = profilesToRender === ALL_STUDENTS_PROFILES ? ALL_STUDENTS_PROFILES : profilesToRender;
+            
+            // Certifique-se de que a ordenação usa a lista correta
+            const sortedProfiles = listToRender.sort((a, b) => a.name.localeCompare(b.name)); 
+
+            // 1. Inicia a construção da tabela (somente <thead>)
+            let tableHTML = `
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 shadow overflow-hidden sm:rounded-lg">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome (ID)</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Telefone</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimento</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Modalidades</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">`; 
+
+            // 2. Loop para gerar as linhas (<tr>)
+            sortedProfiles.forEach(profile => {
+                const status = getExpirationStatus(profile.expiryDate);
+                const statusClass = status.expired ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
+                const statusText = status.expired ? 'VENCIDA' : 'ATIVA';
+                
+                // --- Lógica de Modalidades ---
+                let classesDisplay = 'Nenhuma';
+                // Adaptação para garantir que o campo 'enrollment' ou 'classes' seja lido
+                const classesData = profile.enrollment || profile.classes; 
+                // Adaptação para tratar se 'classesData' é um array de IDs ou um array de objetos {name, id}
+                const enrolledClassesIDs = Array.isArray(classesData) ? classesData.map(c => c.id || c) : [];
+
+                if (enrolledClassesIDs.length > 0) {
+                    // 1. Buscar os detalhes completos de cada aula
+                    const detailedClasses = enrolledClassesIDs
+                        .map(id => ALL_CLASS_OPTIONS.find(aula => aula.id === id))
+                        .filter(aula => aula); // Remove IDs não encontrados
+
+                    // 2. Aplicar a ordenação (Dia e Horário)
+                    detailedClasses.sort((a, b) => {
+                        // ... (Sua lógica de ordenação por Dia/Horário - Mantida)
+                        const dayOrderA = DAYS_OF_WEEK_PT.indexOf(a.dia);
+                        const dayOrderB = DAYS_OF_WEEK_PT.indexOf(b.dia);
+                        
+                        if (dayOrderA !== dayOrderB) {
+                            return dayOrderA - dayOrderB;
+                        }
+                        return a.horario.localeCompare(b.horario);
+                    });
+                    
+                    // 3. Formatar e unir com <br>
+                    classesDisplay = detailedClasses.map(aula => {
+                        const professorDisplay = aula.professor ? ` (${aula.professor})` : '';
+                        return `${aula.dia} - ${aula.horario} | ${aula.modalidade}${professorDisplay}`;
+                    }).join('<br>'); // Junta com quebra de linha (lista)
+                }
+                // --- FIM Lógica de Modalidades ---
+
+                tableHTML += `
+                    <tr>
+                        <td class="px-6 py-4 text-sm font-medium text-indigo-600">${profile.name} <span class="text-gray-500 text-xs">(${profile.id})</span></td>
+                        <td class="px-6 py-4 text-sm text-gray-900">${profile.phone || 'N/A'}</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
+                                ${status.display} (${statusText})
+                            </span>
+                        </td>
+                        
+                        <td class="px-6 py-4 text-sm text-gray-900" title="Lista completa de modalidades matriculadas.">
+                            ${classesDisplay}
+                        </td>
+                        
+                        <td class="px-6 py-4 text-sm font-medium space-x-2">
+                            <button onclick="editStudent('${profile.id}')" class="px-3 py-1 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600">Editar</button>
+                            <button onclick="showAdminQrCodeForStudent('${profile.id}')" class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">QR Code</button>
+                            <button onclick="deleteStudent('${profile.id}')" class="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600">Excluir</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            // 3. Fecha as tags da tabela e injeta o HTML completo
+            tableHTML += `</tbody></table></div>`;
+            
+            container.innerHTML = tableHTML;
+        }
+
+        async function editStudent(studentId) {
+            const profile = await getProfile(studentId);
+
+            if (!profile) {
+                showMessageBox('Erro', 'Perfil do aluno não encontrado. (ID: ' + studentId + ')', 'error');
+                return;
+            }
+
+            // --- POPULANDO CAMPOS: Adicionando checagens de segurança (Resolvendo 'Cannot set properties of null') ---
+            
+            // Título do Modal
+            const modalTitleEl = document.getElementById('edit-modal-title');
+            if (modalTitleEl) modalTitleEl.textContent = 'Editar Aluno';
+
+            // Campos do Formulário
+            const idHolderEl = document.getElementById('edit-id-holder');
+            if (idHolderEl) idHolderEl.value = profile.id;
+            
+            const nameEl = document.getElementById('edit-name');
+            if (nameEl) nameEl.value = profile.name;
+            
+            const phoneEl = document.getElementById('edit-phone');
+            if (phoneEl) phoneEl.value = profile.phone || '';
+            
+            const expiryDateEl = document.getElementById('edit-expiry-date');
+            if (expiryDateEl) expiryDateEl.value = profile.expiryDate;
+
+            // --- LÓGICA ROBUSTA DE PRÉ-SELEÇÃO DAS CLASSES ---
+            const classesSelect = document.getElementById('edit-enrollment');
+            
+            // Só executa a lógica de seleção se o elemento principal existir
+            if (classesSelect) {
+                // 1. Limpa todas as seleções anteriores
+                Array.from(classesSelect.options).forEach(option => {
+                    option.selected = false;
+                });
+                
+                // 2. Extrai a lista de classes do perfil (retrocompatível)
+                const rawClasses = profile.classes || profile.enrollment || [];
+                
+                // 3. Mapeia a lista para extrair APENAS o ID
+                const studentClassIds = rawClasses
+                    .map(c => {
+                        if (typeof c === 'object' && c !== null && c.id) {
+                            return String(c.id);
+                        }
+                        return String(c);
+                    })
+                    .filter(id => id);
+
+                // 4. Percorre as opções do select e marca as que correspondem aos IDs
+                if (studentClassIds.length > 0) {
+                    Array.from(classesSelect.options).forEach(option => {
+                        if (studentClassIds.includes(option.value)) {
+                            option.selected = true;
+                        }
+                    });
+                }
+            } else {
+                 console.error("Elemento 'edit-enrollment' (Select de Modalidades) não encontrado.");
+            }
+            // --- FIM DA LÓGICA DE PRÉ-SELEÇÃO ---
+
+            // Exibe o modal (Último passo que deve ocorrer se tudo deu certo)
+            const formContainerEl = document.getElementById('edit-student-form-container');
+            if (formContainerEl) {
+                formContainerEl.classList.remove('hidden');
+            } else {
+                showMessageBox('Erro Crítico', 'O container do formulário de edição está faltando no HTML.', 'error');
+            }
+        }
+        
+        async function saveStudentFromAdmin() {
+            const id = document.getElementById('edit-id-holder').value || getUniqueUserId();
+            const name = document.getElementById('edit-name').value.trim();
+            const phone = document.getElementById('edit-phone').value.trim();
+            const expiryDate = document.getElementById('edit-expiry-date').value.trim();
+            
+            // O ID do SELECT deve ser 'edit-enrollment' (conforme seu código)
+            const enrollmentSelect = document.getElementById('edit-enrollment');
+            
+            // --- CORREÇÃO APLICADA AQUI ---
+            // 1. Mapeia as opções selecionadas para objetos {name, id}
+            const selectedClasses = Array.from(enrollmentSelect.selectedOptions).map(option => ({
+                name: option.text, // Pega o texto visível (nome da modalidade)
+                id: option.value   // Pega o valor (ID/código da modalidade)
+            }));
+            // --- FIM DA CORREÇÃO ---
+            
+            // Validação agora usa 'selectedClasses'
+            if (!name || !phone || !expiryDate || selectedClasses.length === 0) {
+                showMessageBox('Erro de Cadastro', 'Por favor, preencha todos os campos e selecione pelo menos uma aula.', 'warning');
+                return;
+            }
+
+            const profileToSave = {
+                id,
+                name,
+                phone,
+                expiryDate,
+                // *** CORREÇÃO CRÍTICA AQUI ***
+                // Padronizando o campo para 'enrollment', que é o nome esperado pelo sistema de check-in.
+                enrollment: selectedClasses 
+            };
+
+            try {
+                await saveProfileToDB(profileToSave);
+                showMessageBox('Sucesso', `Aluno(a) ${name} salvo(a) com sucesso!`, 'success');
+                document.getElementById('edit-student-form-container').classList.add('hidden');
+                
+                // Recarrega e renderiza a tabela para mostrar o novo dado
+                await getAllProfiles();
+                renderStudentManagementTable();
+            } catch (e) {
+                // *** ADICIONE ISTO PARA VER O ERRO REAL ***
+                console.error("Erro detalhado ao salvar perfil:", e); 
+                // ***************************************
+                showMessageBox('Erro', 'Falha ao salvar o perfil.', 'error');
+            }
+        }
+
+        async function deleteStudent(id) {
+            if (!confirm('Tem certeza que deseja EXCLUIR este aluno? Isso não pode ser desfeito.')) return;
+
+            try {
+                await deleteProfile(id);
+                showMessageBox('Sucesso', 'Aluno excluído.', 'success');
+                await getAllProfiles();
+                renderStudentManagementTable();
+            } catch (e) {
+                showMessageBox('Erro', 'Falha ao excluir aluno.', 'error');
+            }
+        }
+
+        function showAdminQrCodeForStudent(id) {
+            const profile = ALL_STUDENTS_PROFILES.find(p => p.id === id);
+            if (!profile) {
+                showMessageBox('Erro', 'Perfil do aluno não encontrado.', 'error');
+                return;
+            }
+
+            const qrcodeContainer = document.getElementById('qrcodeDisplay');
+            qrcodeContainer.innerHTML = '';
+            
+            new QRCode(qrcodeContainer, {
+                text: profile.id, 
+                width: 200,
+                height: 200,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+
+            document.getElementById('qrCodeModal').classList.remove('hidden');
+        }
+
+        // --- Funções de Login/Inicialização (CORRIGIDO PARA USAR ASYNC/AWAIT) ---
+
+        async function handleAdminLogin() { // CORRIGIDO: AGORA É ASYNC
+            const password = document.getElementById('adminPassword').value;
+            if (password === ADMIN_PASSWORD) {
+                localStorage.setItem('isAdmin', 'true');
+                showView('admin-view');
+                document.getElementById('adminPassword').value = '';
+                await initAdminViewData(); // CORRIGIDO: Adicionado 'await'
+            } else {
+                showMessageBox('Erro de Acesso', 'Senha de administrador incorreta.', 'error');
+                document.getElementById('adminPassword').value = '';
+                document.getElementById('adminPassword').focus();
+            }
+        }
+
+        function handleAdminLogout() {
+            localStorage.removeItem('isAdmin');
+            // Limpa o intervalo de refresh ao sair.
+            if (classRefreshInterval) {
+                clearInterval(classRefreshInterval);
+                classRefreshInterval = null;
+            }
+            showView('login-view');
+            allProfiles = [];
+            allCheckins = [];
+            document.getElementById('adminPassword').value = '';
+        }
+
+        async function initAdminViewData() {
+            // *** NOVO: Executa a migração antes de carregar os dados ***
+            await migrateLocalProfilesToCloud(); 
+            // Garante que todos os dados necessários para o admin estejam carregados.
+            await getAllProfiles(); // Carrega todos os perfis para a gestão
+            await getCheckins(); // Carrega todos os check-ins para a checagem de duplicidade e ocupação
+            
+            await showAdminSubView('admin-quick-checkin-view'); // AGORA COM AWAIT
+        }
+
+        function wireUpEvents() {
+            // Eventos do Menu
+            document.getElementById('btn-admin-quick-checkin')?.addEventListener('click', async () => await showAdminSubView('admin-quick-checkin-view'));
+            document.getElementById('btn-admin-manage')?.addEventListener('click', async () => await showAdminSubView('admin-manage-students-view'));
+            document.getElementById('btn-admin-manage-schedule')?.addEventListener('click', async () => await showAdminSubView('admin-manage-schedule-view'));
+            document.getElementById('btn-admin-checkin-history')?.addEventListener('click', async () => await showAdminSubView('admin-history-view'));
+            document.getElementById('btn-admin-logout')?.addEventListener('click', handleAdminLogout);
+
+            // Eventos do Scanner
+            document.getElementById('btn-open-admin-scanner')?.addEventListener('click', openAdminScannerModal);
+            document.getElementById('closeAdminScannerBtn')?.addEventListener('click', closeAdminScannerModal);
+
+            // Eventos Quick Check-in
+            document.getElementById('btn-process-checkin')?.addEventListener('click', async () => {
+                const studentId = document.getElementById('quickCheckinStudentId').value.trim();
+                await processAutomaticCheckin(studentId);
+            });
+
+            // Eventos Gerenciamento de Alunos
+            document.getElementById('btn-add-new-student-admin')?.addEventListener('click', () => {
+                document.getElementById('edit-id-holder').value = '';
+                document.getElementById('edit-form-title').textContent = 'Cadastrar Novo Aluno';
+                document.getElementById('edit-name').value = '';
+                document.getElementById('edit-phone').value = '';
+                document.getElementById('edit-expiry-date').value = '';
+                Array.from(document.getElementById('edit-enrollment').options).forEach(option => option.selected = false); 
+                document.getElementById('edit-student-form-container').classList.remove('hidden');
+            });
+            document.getElementById('btn-save-student')?.addEventListener('click', saveStudentFromAdmin);
+            document.getElementById('btn-cancel-edit')?.addEventListener('click', () => {
+                document.getElementById('edit-student-form-container').classList.add('hidden');
+            });
+
+            // Eventos Gerenciamento de Grade
+            document.getElementById('btn-add-new-class-admin')?.addEventListener('click', () => {
+                document.getElementById('edit-class-id-holder').value = '';
+                document.getElementById('edit-class-form-title').textContent = 'Cadastrar Nova Aula';
+                document.getElementById('edit-class-modalidade').value = '';
+                document.getElementById('edit-class-dia').value = '';
+                document.getElementById('edit-class-horario').value = '';
+                document.getElementById('edit-class-professor').value = '';
+                document.getElementById('edit-class-capacidade').value = '1';
+                document.getElementById('edit-class-token').value = '';
+                document.getElementById('edit-class-form-container').classList.remove('hidden');
+            });
+            document.getElementById('btn-save-class')?.addEventListener('click', saveClassFromAdmin);
+            document.getElementById('btn-cancel-class-edit')?.addEventListener('click', () => {
+                document.getElementById('edit-class-form-container').classList.add('hidden');
+            });
+
+            // Eventos Histórico
+            document.getElementById('applyFiltersBtn')?.addEventListener('click', renderCheckinHistory);
+            document.getElementById('clearHistoryBtn')?.addEventListener('click', async () => {
+                 if (!confirm('ATENÇÃO: Você está prestes a limpar TODO o histórico de check-ins. Esta ação não pode ser desfeita.')) return;
+                 try {
+                     await clearAllCheckins();
+                     showMessageBox('Sucesso', 'Histórico de check-in limpo permanentemente.', 'success');
+                     renderCheckinHistory();
+                 } catch (e) {
+                     showMessageBox('Erro', 'Falha ao limpar histórico.', 'error');
+                 }
+            });
+
+            // Eventos Modal de Grade
+            document.getElementById('closeGradeModalBtn')?.addEventListener('click', () => {
+                document.getElementById('gradeModal').classList.add('hidden');
+            });
+
+        }
+
+        async function init() {
+            initFirebase(); // <-- NOVO: Inicializa o Firebase
+            await openDB();
+            await loadScheduleFromDB(); 
+            populateRegistrationOptions();
+
+            const isAdmin = localStorage.getItem('isAdmin') === 'true';
+
+            if (isAdmin) {
+                await initAdminViewData(); 
+                showView('admin-view');
+            } else {
+                showView('login-view');
+            }
+
+            wireUpEvents();
+        }
+
+        // Torna funções globais
+        window.applyFilters = renderCheckinHistory;
+        window.clearAllFilters = clearAllFilters;
+        window.editStudent = editStudent;
+        window.deleteStudent = deleteStudent;
+        window.showAdminQrCodeForStudent = showAdminQrCodeForStudent;
+        window.editClass = editClass;
+        window.deleteClass = deleteClass;
+        window.handleAdminLogin = handleAdminLogin; // AGORA É ASYNC
+        
+        window.closeMessageBox = closeMessageBox;
+
+
+        // Inicia a aplicação
+        window.onload = init;
+    </script>
+</body>
+</html>

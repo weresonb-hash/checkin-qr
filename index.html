@@ -269,6 +269,7 @@
         let GRADE_SCHEDULE_RUNTIME = {};
         let classRefreshInterval = null; // NOVO: Variável para o timer de atualização de aulas
         let FIREBASE_DB = null;
+        let checkinListenerUnsubscribe = null;
 
         // --- Dados da Grade e Utilitários de Tempo ---
         const DAYS_OF_WEEK_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -1325,12 +1326,10 @@
                 // Exibe a informação de ocupação (apenas para aulas não-MUSC)
                 let occupancyDisplay = '';
                 if (aula.token !== "MUSC") {
-                     const currentOccupancy = allCheckins.filter(c => {
-                        const checkinDate = new Date(c.timestamp).toLocaleDateString('pt-BR');
-                        // Conta ocupação para a aula específica (modalidade e horário) e que ocorreu HOJE.
-                        return c.modalidade === aula.modalidade && c.horario === aula.horario && checkinDate === todayLocaleDate;
-                    }).length;
-                    
+                    const currentOccupancy = allCheckins.filter(c => 
+                        c.modalidade === aula.modalidade && c.horario === aula.horario
+                    ).length;
+            
                     const capacity = aula.capacidade;
                     occupancyDisplay = ` - Ocupação: <span class="${currentOccupancy >= capacity ? 'text-red-600 font-bold' : 'font-medium'}">${currentOccupancy}/${capacity}</span>`;
                 }
@@ -1602,7 +1601,87 @@
                 statusEl.textContent = "ERRO: Não foi possível iniciar a câmera. Verifique permissões (HTTPS), se a webcam está conectada e disponível.";
             });
         }    
+
+
+        // ---- Funções de Lógica de Sincronização em tempo real de Ocupação por vagas Ato do Chekin ----
+
+        function setupRealtimeOccupationListener() {
+            if (!FIREBASE_DB) return;
+
+            // Define o início e o fim do dia atual (importante para limitar a consulta!)
+            const today = new Date();
+            const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+            const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+
+            let query = FIREBASE_DB.collection(STORE_CHECKINS)
+                // Filtra os check-ins entre 00:00:00 e 23:59:59 do dia atual
+                .where('timestamp', '>=', startOfToday)
+                .where('timestamp', '<=', endOfToday)
+                .orderBy('timestamp'); // A ordenação é necessária ao usar filtros de range de data/hora
+
+            // Configura o listener em tempo real
+            checkinListenerUnsubscribe = query.onSnapshot(snapshot => {
+                const todaysCheckins = [];
+                snapshot.forEach(doc => {
+                    let record = doc.data();
+                    // Converte o ServerTimestamp para um objeto Date JS
+                    if (record.timestamp && typeof record.timestamp.toDate === 'function') {
+                        record.timestamp = record.timestamp.toDate(); 
+                    }
+                    todaysCheckins.push(record);
+                });
+
+                console.log(`[Firestore Listener] ${todaysCheckins.length} check-ins do dia detectados. Atualizando ocupação...`);
+                
+                // Chamada para a função que atualiza a interface
+                updateClassOccupationUI(todaysCheckins);
+                
+            }, error => {
+                console.error("Erro no listener em tempo real de check-ins:", error);
+            });
+        }
                     
+
+        function startRealtimeCheckinListener() {
+            if (!FIREBASE_DB) return;
+
+            // 1. Define o intervalo de hoje (00:00:00 até 23:59:59)
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+            console.log("Iniciando monitoramento de ocupação em tempo real...");
+
+            // 2. Cria a consulta no Firestore
+            const query = FIREBASE_DB.collection(STORE_CHECKINS)
+                .where('timestamp', '>=', startOfDay)
+                .where('timestamp', '<=', endOfDay);
+
+            // 3. Ativa o Listener
+            unsubscribeCheckins = query.onSnapshot((snapshot) => {
+                const updatedCheckins = [];
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    // Converte o timestamp do Firebase para o formato que seu filtro usa (ms)
+                    if (data.timestamp && data.timestamp.toDate) {
+                        data.timestamp = data.timestamp.toDate().getTime();
+                    }
+                    updatedCheckins.push(data);
+                });
+
+                // 4. Atualiza a variável global que sua função de renderização usa
+                allCheckins = updatedCheckins;
+
+                // 5. MANDA RE-RENDERIZAR A LISTA NA TELA
+                console.log(`Ocupação atualizada: ${allCheckins.length} check-ins hoje.`);
+                renderAvailableClasses(); 
+                
+            }, (error) => {
+                console.error("Erro no listener de ocupação:", error);
+            });
+        }
+
 
 
         // --- Funções de Admin (Histórico) (SEM ALTERAÇÃO) ---
@@ -2263,10 +2342,11 @@
         }
 
         async function init() {
-            initFirebase(); // <-- NOVO: Inicializa o Firebase
+            await initFirebase(); // <-- NOVO: Inicializa o Firebase
             await openDB();
             await loadScheduleFromDB(); 
             populateRegistrationOptions();
+            startRealtimeCheckinListener();
 
             const isAdmin = localStorage.getItem('isAdmin') === 'true';
 
